@@ -60,8 +60,8 @@ def test_camera(camera_id=0, confidence=0.5):
             display_frame = frame.copy()
             
             # Text info
-            status = "🔴 LANTAI BERSIH!" if detected else "🟢 LANTAI KOTOR"
-            color = (0, 0, 255) if detected else (0, 255, 0)  # BGR
+            status = "🟢 LANTAI BERSIH!" if detected else "🔴 LANTAI KOTOR"
+            color = (0, 255, 0) if detected else (0, 0, 255)  # BGR
             
             cv2.putText(display_frame, status, (20, 40), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 2)
