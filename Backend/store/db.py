@@ -6,7 +6,7 @@ DB_CONFIG = {
     "port": 3306,
     "user": "root",
     "password": "",
-    "database": "flooreye_db",
+    "database": "floor_eye",
 }
 
 connection_pool = pooling.MySQLConnectionPool(
