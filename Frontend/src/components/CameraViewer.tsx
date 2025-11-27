@@ -1,30 +1,40 @@
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState } from "react";
 
 export default function CameraViewer() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const streamRef = useRef(null);   // FIX!!
 
   const [isActive, setIsActive] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
   const [result, setResult] = useState(null);
 
-  let stream;
-
   const startCamera = async () => {
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+
+      streamRef.current = stream; // SIMPAN STREAM
       videoRef.current.srcObject = stream;
+
+      await videoRef.current.play();  // PENTING!
+
       setIsActive(true);
     } catch (error) {
       console.error("Camera error:", error);
+      alert("Tidak dapat mengakses kamera. Periksa izin browser.");
     }
   };
 
   const stopCamera = () => {
-    if (videoRef.current?.srcObject) {
-      videoRef.current.srcObject.getTracks().forEach((t) => t.stop());
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+
+    if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+
     setIsActive(false);
     setIsDetecting(false);
   };
@@ -38,6 +48,7 @@ export default function CameraViewer() {
 
     const ctx = canvas.getContext("2d");
     ctx.drawImage(video, 0, 0);
+
     return canvas;
   };
 
@@ -60,7 +71,6 @@ export default function CameraViewer() {
 
       const data = await response.json();
       setResult(data);
-
     } catch (error) {
       console.error("Detect API error:", error);
     } finally {
@@ -70,8 +80,6 @@ export default function CameraViewer() {
 
   return (
     <div className="space-y-4">
-
-      {/* Buttons */}
       <div className="flex gap-3">
         {!isActive && (
           <button
@@ -102,17 +110,15 @@ export default function CameraViewer() {
         )}
       </div>
 
-      {/* Live video */}
       <video
         ref={videoRef}
         autoPlay
+        playsInline        // FIX UNTUK MOBILE
         className="w-full h-80 bg-gray-200 rounded-lg"
       ></video>
 
-      {/* Hidden canvas */}
       <canvas ref={canvasRef} className="hidden"></canvas>
 
-      {/* Hasil Deteksi */}
       {result && (
         <div className="p-4 bg-gray-100 border rounded-lg">
           <h3 className="font-bold mb-2">Hasil Deteksi:</h3>
