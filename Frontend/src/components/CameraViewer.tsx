@@ -1,27 +1,29 @@
 import { useRef, useState } from "react";
 
-export default function CameraViewer() {
+export default function CameraViewer({ onResult }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const streamRef = useRef(null);   // FIX!!
+  const streamRef = useRef(null);
 
   const [isActive, setIsActive] = useState(false);
   const [isDetecting, setIsDetecting] = useState(false);
+  const [error, setError] = useState(null);
   const [result, setResult] = useState(null);
 
   const startCamera = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 1280, height: 720 },
+      });
 
-      streamRef.current = stream; // SIMPAN STREAM
+      streamRef.current = stream;
       videoRef.current.srcObject = stream;
 
-      await videoRef.current.play();  // PENTING!
-
+      await videoRef.current.play();
       setIsActive(true);
-    } catch (error) {
-      console.error("Camera error:", error);
-      alert("Tidak dapat mengakses kamera. Periksa izin browser.");
+    } catch (err) {
+      console.error("Camera error:", err);
+      setError("Tidak dapat mengakses kamera.");
     }
   };
 
@@ -30,49 +32,47 @@ export default function CameraViewer() {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
-
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-
+    videoRef.current.srcObject = null;
     setIsActive(false);
-    setIsDetecting(false);
   };
 
   const captureFrame = () => {
-    const canvas = canvasRef.current;
     const video = videoRef.current;
+    const canvas = canvasRef.current;
 
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = 1280;
+    canvas.height = 720;
 
     const ctx = canvas.getContext("2d");
-    ctx.drawImage(video, 0, 0);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    return canvas;
+    return canvas.toDataURL("image/jpeg", 0.95); // kualitas tinggi
   };
 
   const sendToDetectAPI = async () => {
     try {
       setIsDetecting(true);
+      setError(null);
 
-      const canvas = captureFrame();
-      const blob = await new Promise((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.9)
-      );
+      const base64Frame = captureFrame();
 
-      const formData = new FormData();
-      formData.append("image", blob, "frame.jpg");
-
-      const response = await fetch("http://localhost:5000/api/detect", {
+      const response = await fetch("http://localhost:8000/detect/frame", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          image_base64: base64Frame,
+          notes: "live-camera-frame",
+        }),
       });
 
       const data = await response.json();
       setResult(data);
-    } catch (error) {
-      console.error("Detect API error:", error);
+
+      if (onResult) onResult(data);
+
+    } catch (err) {
+      console.error(err);
+      setError("Gagal mengirim frame ke backend.");
     } finally {
       setIsDetecting(false);
     }
@@ -81,16 +81,14 @@ export default function CameraViewer() {
   return (
     <div className="space-y-4">
       <div className="flex gap-3">
-        {!isActive && (
+        {!isActive ? (
           <button
             onClick={startCamera}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg"
           >
             Aktifkan Kamera
           </button>
-        )}
-
-        {isActive && (
+        ) : (
           <>
             <button
               onClick={stopCamera}
@@ -113,11 +111,13 @@ export default function CameraViewer() {
       <video
         ref={videoRef}
         autoPlay
-        playsInline        // FIX UNTUK MOBILE
-        className="w-full h-80 bg-gray-200 rounded-lg"
+        playsInline
+        className="w-full h-80 bg-gray-200 rounded-lg object-cover"
       ></video>
 
       <canvas ref={canvasRef} className="hidden"></canvas>
+
+      {error && <p className="text-red-600">{error}</p>}
 
       {result && (
         <div className="p-4 bg-gray-100 border rounded-lg">
