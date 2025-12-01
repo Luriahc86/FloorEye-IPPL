@@ -1,8 +1,7 @@
 import cv2
 from ultralytics import YOLO
 
-# Load model hanya sekali
-MODEL_PATH = "computer_vision/models/best.pt"  # Ganti jika pakai model custom
+MODEL_PATH = "computer_vision/models/best.pt"
 print(f"[INFO] Loading YOLO model from {MODEL_PATH}")
 
 model = YOLO(MODEL_PATH)
@@ -13,7 +12,7 @@ def detect_dirty_floor(frame, conf_threshold: float = 0.25, debug: bool = False)
     Mengembalikan True jika ditemukan objek dengan class 'dirty' atau 'kotor'.
     """
     try:
-        results = model(frame)[0]  # result object
+        results = model(frame)[0]
 
         for box in results.boxes:
             cls_id = int(box.cls[0])
