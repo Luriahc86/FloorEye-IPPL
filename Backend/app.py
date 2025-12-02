@@ -14,15 +14,27 @@ import base64
 from typing import List, Optional
 
 from store.db import get_connection
+import threading
+import time
+import requests
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RTSP_URL = os.path.join(BASE_DIR, "assets", "test_video.mp4")
 
+# Notification configuration
+NOTIFY_INTERVAL = int(os.environ.get("NOTIFY_INTERVAL", "60"))
+FONNTE_API_KEY = os.environ.get("FONNTE_API_KEY", "mjXwZ3JHzXryywVcFMHL")
+if not os.environ.get("FONNTE_API_KEY"):
+    print("[WARN] FONNTE_API_KEY not set; using default key (may fail). Set env var FONNTE_API_KEY.")
+
 if "linux" in sys.platform or os.environ.get("DISPLAY") is None:
     cv2.setUseOptimized(True)
 
 
+# =================================================================
+# MODELS
+# =================================================================
 class CameraFramePayload(BaseModel):
     image_base64: str
     notes: Optional[str] = None
@@ -32,22 +44,38 @@ class HistoryItem(BaseModel):
     id: int
     source: str
     is_dirty: bool
-    confidence: Optional[float] = None
-    notes: Optional[str] = None
+    confidence: Optional[float]
+    notes: Optional[str]
     created_at: str
 
 
+class WARecipientCreate(BaseModel):
+    phone: str
+    active: Optional[bool] = True
+
+
+# =================================================================
+# FASTAPI LIFESPAN
+# =================================================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[INFO] FloorEye Backend Started")
     print(f"[INFO] Video Source (test): {RTSP_URL}")
+
+    stop_event = threading.Event()
+    monitor_thread = threading.Thread(target=monitor_cameras_loop, args=(stop_event,), daemon=True)
+    monitor_thread.start()
+
     yield
+
     print("[INFO] Server Shutdown")
+    stop_event.set()
+    monitor_thread.join(timeout=2)
 
 
 app = FastAPI(
     title="FloorEye Backend",
-    version="1.0",
+    version="2.0",
     lifespan=lifespan,
 )
 
@@ -59,6 +87,9 @@ app.add_middleware(
 )
 
 
+# =================================================================
+# IMAGE UTILS
+# =================================================================
 def decode_image_from_bytes(data: bytes):
     arr = np.frombuffer(data, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -73,197 +104,338 @@ def decode_image_from_base64(b64_string: str) -> bytes:
     return base64.b64decode(b64_string)
 
 
-def insert_detection_to_db(
-    source: str,
-    is_dirty: bool,
-    image_path: str,
-    confidence: float | None = None,
-    notes: str | None = None,
-) -> int:
+# =================================================================
+# DATABASE
+# =================================================================
+def insert_detection_to_db(source, is_dirty, image_path, confidence=None, notes=None):
     conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        sql = """
-            INSERT INTO floor_events (source, is_dirty, confidence, notes, image_path)
-            VALUES (%s, %s, %s, %s, %s)
-        """
-        cursor.execute(
-            sql,
-            (source, int(is_dirty), confidence, notes, image_path),
-        )
-        conn.commit()
-        new_id = cursor.lastrowid
-        cursor.close()
-        return new_id
-    finally:
-        conn.close()
+    cursor = conn.cursor()
 
+    cursor.execute("""
+        INSERT INTO floor_events (source, is_dirty, confidence, notes, image_path)
+        VALUES (%s, %s, %s, %s, %s)
+    """, (source, int(is_dirty), confidence, notes, image_path))
+
+    conn.commit()
+    new_id = cursor.lastrowid
+
+    cursor.close()
+    conn.close()
+    return new_id
+
+
+def get_cameras_from_db():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT id, nama, lokasi, link, aktif FROM cameras")
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return rows
+
+
+def get_active_wa_recipients():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT phone FROM wa_recipients WHERE active = 1")
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+
+    return [r["phone"] for r in rows]
+
+
+# =================================================================
+# WHATSAPP (FONNTE)
+# =================================================================
+def send_whatsapp(phone: str, text: str):
+    url = "https://api.fonnte.com/send"
+    headers = {"Authorization": FONNTE_API_KEY}
+    data = {"target": phone, "message": text}
+
+    try:
+        res = requests.post(url, headers=headers, data=data, timeout=15)
+        code = getattr(res, "status_code", None)
+        text_res = getattr(res, "text", "")
+        print(f"[WA RESPONSE] status={code} body={text_res}")
+        # interpret success
+        if code and 200 <= code < 300:
+            return True
+        else:
+            return False
+    except Exception as e:
+        print("[WA ERROR]", e)
+        return False
+
+
+# =================================================================
+# CAMERA MONITORING LOOP
+# =================================================================
+def monitor_cameras_loop(stop_event):
+    last_notification = {}
+    print("[INFO] Camera monitor thread started")
+
+    while not stop_event.is_set():
+        try:
+            cameras = get_cameras_from_db()
+            wa_list = get_active_wa_recipients()
+
+            for cam in cameras:
+                if not cam["aktif"]:
+                    continue
+
+                cam_id = cam["id"]
+                rtsp = cam["link"]
+                src_name = cam["nama"] or f"camera_{cam_id}"
+
+                now = time.time()
+                if now - last_notification.get(cam_id, 0) < NOTIFY_INTERVAL:
+                    continue
+
+                cap = cv2.VideoCapture(rtsp)
+                ret, frame = cap.read()
+                cap.release()
+
+                if not ret:
+                    print(f"[WARN] No frame from camera {cam_id}")
+                    continue
+
+                detected = detect_dirty_floor(frame, debug=False)
+
+                if detected:
+                    save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
+                    os.makedirs(save_dir, exist_ok=True)
+
+                    filename = f"cam{cam_id}_{int(time.time())}.jpg"
+                    file_path = os.path.join(save_dir, filename)
+                    cv2.imwrite(file_path, frame)
+
+                    insert_detection_to_db(
+                        source=f"camera_{cam_id}",
+                        is_dirty=True,
+                        image_path=file_path,
+                        confidence=None,
+                        notes=f"Detected on camera {src_name}",
+                    )
+
+                    for phone in wa_list:
+                        send_whatsapp(
+                            phone,
+                            f"⚠️ *Lantai kotor terdeteksi!*\nKamera: {src_name}\nWaktu: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                        )
+
+                    last_notification[cam_id] = now
+
+        except Exception as e:
+            print("[ERROR] monitor loop error:", e)
+
+        time.sleep(5)
+
+
+# =================================================================
+# ROUTES
+# =================================================================
 
 @app.get("/")
 def root():
     return {"message": "FloorEye backend berjalan 🚀", "status": "ok"}
 
 
-@app.get("/health")
-def health_check():
-    try:
-        conn = get_connection()
-        conn.close()
-        db_status = "ok"
-    except Exception as e:
-        db_status = f"error: {e}"
+@app.post("/wa-recipients")
+def add_wa_recipient(payload: WARecipientCreate):
+    conn = get_connection()
+    cursor = conn.cursor()
 
-    return {
-        "status": "healthy",
-        "video_source": RTSP_URL,
-        "database": db_status,
-    }
+    cursor.execute(
+        "INSERT INTO wa_recipients (phone, active) VALUES (%s, %s)",
+        (payload.phone, int(payload.active))
+    )
+    conn.commit()
+
+    new_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+
+    return {"id": new_id, "message": "Nomor WA ditambahkan"}
+
+
+@app.get("/wa-recipients")
+def get_wa_recipients():
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("SELECT * FROM wa_recipients ORDER BY id DESC")
+    rows = cursor.fetchall()
+
+    cursor.close()
+    conn.close()
+    return rows
+
+
+@app.post("/test-wa")
+def test_wa(payload: dict):
+    """POST test WA. Payload: { "phone": "62812...", "message": "..." }
+       If phone omitted, sends to active recipients from DB.
+    """
+    phone = payload.get("phone")
+    message = payload.get("message", "[FloorEye] Test notifikasi WA")
+
+    if not phone:
+        try:
+            phones = get_active_wa_recipients()
+        except Exception as e:
+            print("[ERROR] reading WA recipients:", e)
+            raise HTTPException(status_code=500, detail="Failed reading recipients from DB")
+
+        if not phones:
+            return {"sent": False, "message": "No WA recipients configured"}
+
+        results = {}
+        for p in phones:
+            ok = send_whatsapp(p, message)
+            results[p] = ok
+
+        return {"sent": any(results.values()), "results": results}
+    else:
+        ok = send_whatsapp(phone, message)
+        return {"sent": ok, "phone": phone}
+
+
+@app.get("/test-wa")
+def test_wa_get():
+    """Convenience GET for quick browser test: sends to active recipients."""
+    try:
+        phones = get_active_wa_recipients()
+    except Exception as e:
+        print("[ERROR] reading WA recipients:", e)
+        raise HTTPException(status_code=500, detail="Failed reading recipients from DB")
+
+    if not phones:
+        return {"sent": False, "message": "No WA recipients configured"}
+
+    results = {}
+    for p in phones:
+        ok = send_whatsapp(p, "[FloorEye] Test notifikasi WA (GET)")
+        results[p] = ok
+
+    return {"sent": any(results.values()), "results": results}
 
 
 @app.post("/detect/image")
-async def detect_image(
-    file: UploadFile = File(...),
-    notes: Optional[str] = None,
-):
-    try:
-        file_bytes = await file.read()
-        if not file_bytes:
-            raise HTTPException(status_code=400, detail="File kosong")
+async def detect_image(file: UploadFile = File(...), notes: Optional[str] = None):
 
-        frame = decode_image_from_bytes(file_bytes)
-        is_dirty = detect_dirty_floor(frame, debug=False)
-        confidence = None
+    file_bytes = await file.read()
+    frame = decode_image_from_bytes(file_bytes)
 
-        save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
-        os.makedirs(save_dir, exist_ok=True)
+    is_dirty = detect_dirty_floor(frame, debug=False)
 
-        filename = f"upload_{int(cv2.getTickCount())}.jpg"
-        file_path = os.path.join(save_dir, filename)
+    save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
+    os.makedirs(save_dir, exist_ok=True)
 
-        with open(file_path, "wb") as f:
-            f.write(file_bytes)
+    filename = f"upload_{int(time.time())}.jpg"
+    file_path = os.path.join(save_dir, filename)
 
-        new_id = insert_detection_to_db(
-            source="upload",
-            is_dirty=is_dirty,
-            image_path=file_path,
-            confidence=confidence,
-            notes=notes,
-        )
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
 
-        return {
-            "id": new_id,
-            "source": "upload",
-            "is_dirty": is_dirty,
-            "confidence": confidence,
-            "notes": notes,
-            "image_path": file_path,
-            "message": "Deteksi dari gambar upload berhasil disimpan",
-        }
+    new_id = insert_detection_to_db("upload", is_dirty, file_path, None, notes)
 
-    except Exception as e:
-        print("[ERROR] detect_image:", e)
-        raise HTTPException(status_code=500, detail="Gagal memproses gambar")
+    return {
+        "id": new_id,
+        "source": "upload",
+        "is_dirty": is_dirty,
+        "notes": notes,
+        "image_path": file_path,
+        "message": "Deteksi berhasil"
+    }
 
 
 @app.post("/detect/frame")
 async def detect_frame(payload: CameraFramePayload):
-    try:
-        image_bytes = decode_image_from_base64(payload.image_base64)
-        frame = decode_image_from_bytes(image_bytes)
 
-        is_dirty = detect_dirty_floor(frame, debug=False)
-        confidence = None
+    image_bytes = decode_image_from_base64(payload.image_base64)
+    frame = decode_image_from_bytes(image_bytes)
 
-        save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
-        os.makedirs(save_dir, exist_ok=True)
+    is_dirty = detect_dirty_floor(frame, debug=False)
 
-        filename = f"camera_{int(cv2.getTickCount())}.jpg"
-        file_path = os.path.join(save_dir, filename)
+    save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
+    os.makedirs(save_dir, exist_ok=True)
 
-        with open(file_path, "wb") as f:
-            f.write(image_bytes)
+    filename = f"camera_{int(time.time())}.jpg"
+    file_path = os.path.join(save_dir, filename)
 
-        new_id = insert_detection_to_db(
-            source="camera",
-            is_dirty=is_dirty,
-            image_path=file_path,
-            confidence=confidence,
-            notes=payload.notes,
-        )
+    with open(file_path, "wb") as f:
+        f.write(image_bytes)
 
-        return {
-            "id": new_id,
-            "source": "camera",
-            "is_dirty": is_dirty,
-            "confidence": confidence,
-            "notes": payload.notes,
-            "image_path": file_path,
-            "message": "Deteksi dari kamera berhasil disimpan",
-        }
+    new_id = insert_detection_to_db("camera", is_dirty, file_path, None, payload.notes)
 
-    except Exception as e:
-        print("[ERROR] detect_frame:", e)
-        raise HTTPException(status_code=500, detail="Gagal memproses frame kamera")
+    return {
+        "id": new_id,
+        "source": "camera",
+        "is_dirty": is_dirty,
+        "notes": payload.notes,
+        "image_path": file_path,
+        "message": "Deteksi kamera disimpan"
+    }
 
 
 @app.get("/history", response_model=List[HistoryItem])
 def get_history(limit: int = 50, offset: int = 0):
     conn = get_connection()
-    try:
-        cursor = conn.cursor(dictionary=True)
-        sql = """
-            SELECT id, source, is_dirty, confidence, notes, created_at
-            FROM floor_events
-            ORDER BY created_at DESC
-            LIMIT %s OFFSET %s
-        """
-        cursor.execute(sql, (limit, offset))
-        rows = cursor.fetchall()
-        cursor.close()
+    cursor = conn.cursor(dictionary=True)
 
-        history = [
-            HistoryItem(
-                id=row["id"],
-                source=row["source"],
-                is_dirty=bool(row["is_dirty"]),
-                confidence=row.get("confidence"),
-                notes=row.get("notes"),
-                created_at=row["created_at"].isoformat(),
-            )
-            for row in rows
-        ]
+    cursor.execute("""
+        SELECT id, source, is_dirty, confidence, notes, created_at
+        FROM floor_events
+        ORDER BY created_at DESC
+        LIMIT %s OFFSET %s
+    """, (limit, offset))
 
-        return history
-    finally:
-        conn.close()
+    rows = cursor.fetchall()
+
+    events = [
+        HistoryItem(
+            id=r["id"],
+            source=r["source"],
+            is_dirty=bool(r["is_dirty"]),
+            confidence=r["confidence"],
+            notes=r["notes"],
+            created_at=r["created_at"].isoformat()
+        )
+        for r in rows
+    ]
+
+    cursor.close()
+    conn.close()
+
+    return events
 
 
 @app.get("/image/{event_id}")
 def get_image(event_id: int):
     conn = get_connection()
-    try:
-        cursor = conn.cursor()
-        sql = "SELECT image_path FROM floor_events WHERE id = %s"
-        cursor.execute(sql, (event_id,))
-        row = cursor.fetchone()
-        cursor.close()
+    cursor = conn.cursor()
 
-        if not row or not row[0]:
-            raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
+    cursor.execute("SELECT image_path FROM floor_events WHERE id = %s", (event_id,))
+    row = cursor.fetchone()
 
-        file_path = row[0]
+    cursor.close()
+    conn.close()
 
-        if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="File fisik tidak ditemukan")
+    if not row:
+        raise HTTPException(status_code=404, detail="Gambar tidak ditemukan")
 
-        with open(file_path, "rb") as f:
-            image_bytes = f.read()
+    file_path = row[0]
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File fisik tidak ada")
 
-        return Response(content=image_bytes, media_type="image/jpeg")
+    with open(file_path, "rb") as f:
+        return Response(content=f.read(), media_type="image/jpeg")
 
-    finally:
-        conn.close()
 
 
 if __name__ == "__main__":
