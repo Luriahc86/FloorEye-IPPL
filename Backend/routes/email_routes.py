@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from store.db import get_connection
+from services.email_service import send_email
 
 router = APIRouter()
 
@@ -45,3 +46,28 @@ def patch_recipient(rid: int, body: dict):
     cursor.close()
     conn.close()
     return {"message": "Updated"}
+
+@router.get("/test")
+def test_email():
+    """Send test email to all active recipients."""
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+
+    if not rows:
+        return {"sent": False, "message": "No active recipients"}
+
+    emails = [r["email"] for r in rows]
+    ok = send_email(
+        "[FloorEye] Test Email",
+        "Ini adalah email test dari FloorEye. Jika kamu menerima ini, email notifikasi berhasil dikonfigurasi!",
+        emails
+    )
+
+    if ok:
+        return {"sent": True, "recipients": emails}
+    else:
+        raise HTTPException(500, "Failed to send email; check server logs")

@@ -50,3 +50,31 @@ async def detect_image(file: UploadFile = File(...)):
     conn.close()
 
     return {"detected": detected, "image_path": path}
+
+@router.post("/frame")
+async def detect_frame(payload: FramePayload):
+    """Detect from base64 encoded image frame."""
+    try:
+        image_bytes = decode_b64(payload.image_base64)
+        frame = decode_bytes(image_bytes)
+
+        detected = detect_dirty_floor(frame, debug=False)
+
+        filename = f"camera_{int(time.time())}.jpg"
+        path = os.path.join(SAVE_DIR, filename)
+        cv2.imwrite(path, frame)
+
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO floor_events (source,is_dirty,image_path,notes) VALUES (%s,%s,%s,%s)",
+            ("camera", int(detected), path, payload.notes),
+        )
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return {"detected": detected, "image_path": path, "notes": payload.notes}
+    except Exception as e:
+        print(f"[ERROR] detect_frame: {e}")
+        raise HTTPException(500, f"Detection failed: {str(e)}")

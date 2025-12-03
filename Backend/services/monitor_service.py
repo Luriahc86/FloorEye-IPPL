@@ -23,51 +23,71 @@ def get_cameras():
     return data
 
 def get_active_email_recipients():
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
-    rows = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return [r["email"] for r in rows]
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        return [r["email"] for r in rows]
+    except Exception as e:
+        print(f"[ERROR] get_active_email_recipients: {e}")
+        return []
 
 def monitor_loop(stop):
     last_notif = {}
+    print("[INFO] Monitor thread started")
 
     while not stop.is_set():
-        cams = get_cameras()
-        emails = get_active_email_recipients()
+        try:
+            cams = get_cameras()
+            emails = get_active_email_recipients()
 
-        for cam in cams:
-            cam_id = cam["id"]
-            rtsp = cam["link"]
+            print(f"[DEBUG] Found {len(cams)} cameras, {len(emails)} email recipients")
 
-            now = time.time()
-            if now - last_notif.get(cam_id, 0) < NOTIFY_INTERVAL:
-                continue
+            for cam in cams:
+                cam_id = cam["id"]
+                rtsp = cam["link"]
 
-            cap = cv2.VideoCapture(rtsp)
-            ret, frame = cap.read()
-            cap.release()
+                now = time.time()
+                if now - last_notif.get(cam_id, 0) < NOTIFY_INTERVAL:
+                    continue
 
-            if not ret:
-                continue
+                print(f"[DEBUG] Processing camera {cam_id}: {rtsp}")
+                cap = cv2.VideoCapture(rtsp)
+                ret, frame = cap.read()
+                cap.release()
 
-            detected = detect_dirty_floor(frame, debug=False)
+                if not ret:
+                    print(f"[WARN] No frame from camera {cam_id}")
+                    continue
 
-            if detected:
-                filename = f"cam{cam_id}_{int(time.time())}.jpg"
-                filepath = os.path.join(SAVE_DIR, filename)
-                cv2.imwrite(filepath, frame)
+                detected = detect_dirty_floor(frame, debug=False)
+                print(f"[DEBUG] Camera {cam_id} dirty={detected}")
 
-                if emails:
-                    send_email(
-                        f"[FloorEye] Lantai Kotor Terdeteksi ({cam['nama']})",
-                        f"Otomatis mendeteksi lantai kotor pada kamera {cam['nama']}.",
-                        emails,
-                        [filepath]
-                    )
+                if detected:
+                    filename = f"cam{cam_id}_{int(time.time())}.jpg"
+                    filepath = os.path.join(SAVE_DIR, filename)
+                    cv2.imwrite(filepath, frame)
+                    print(f"[INFO] Saved image: {filepath}")
 
-                last_notif[cam_id] = now
+                    if emails:
+                        print(f"[INFO] Sending alert to {len(emails)} recipients")
+                        ok = send_email(
+                            f"[FloorEye] Lantai Kotor Terdeteksi ({cam['nama']})",
+                            f"Otomatis mendeteksi lantai kotor pada kamera {cam['nama']} pada {time.strftime('%Y-%m-%d %H:%M:%S')}.",
+                            emails,
+                            [filepath]
+                        )
+                        print(f"[INFO] Email send result: {ok}")
+                    else:
+                        print("[WARN] No active email recipients; skipping notification")
+
+                    last_notif[cam_id] = now
+        except Exception as e:
+            print(f"[ERROR] monitor_loop: {e}")
+            import traceback
+            traceback.print_exc()
 
         time.sleep(5)
