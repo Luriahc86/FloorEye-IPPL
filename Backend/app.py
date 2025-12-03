@@ -17,16 +17,25 @@ from store.db import get_connection
 import threading
 import time
 import requests
-
+import smtplib
+import ssl
+from email.message import EmailMessage
+import traceback
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RTSP_URL = os.path.join(BASE_DIR, "assets", "test_video.mp4")
 
-# Notification configuration
+# =================================================================
+# CONFIG
+# =================================================================
+
 NOTIFY_INTERVAL = int(os.environ.get("NOTIFY_INTERVAL", "60"))
-FONNTE_API_KEY = os.environ.get("FONNTE_API_KEY", "mjXwZ3JHzXryywVcFMHL")
-if not os.environ.get("FONNTE_API_KEY"):
-    print("[WARN] FONNTE_API_KEY not set; using default key (may fail). Set env var FONNTE_API_KEY.")
+
+# Gmail SMTP (gunakan sandi aplikasi)
+SMTP_HOST = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER", "flooreye.ippl505@gmail.com")
+SMTP_PASS = os.environ.get("SMTP_PASS", "msbz meuc srxe oipy")
 
 if "linux" in sys.platform or os.environ.get("DISPLAY") is None:
     cv2.setUseOptimized(True)
@@ -35,6 +44,7 @@ if "linux" in sys.platform or os.environ.get("DISPLAY") is None:
 # =================================================================
 # MODELS
 # =================================================================
+
 class CameraFramePayload(BaseModel):
     image_base64: str
     notes: Optional[str] = None
@@ -49,14 +59,15 @@ class HistoryItem(BaseModel):
     created_at: str
 
 
-class WARecipientCreate(BaseModel):
-    phone: str
+class EmailRecipientCreate(BaseModel):
+    email: str
     active: Optional[bool] = True
 
 
 # =================================================================
-# FASTAPI LIFESPAN
+# LIFESPAN
 # =================================================================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     print("[INFO] FloorEye Backend Started")
@@ -75,7 +86,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FloorEye Backend",
-    version="2.0",
+    version="3.0",
     lifespan=lifespan,
 )
 
@@ -90,6 +101,7 @@ app.add_middleware(
 # =================================================================
 # IMAGE UTILS
 # =================================================================
+
 def decode_image_from_bytes(data: bytes):
     arr = np.frombuffer(data, np.uint8)
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
@@ -105,20 +117,21 @@ def decode_image_from_base64(b64_string: str) -> bytes:
 
 
 # =================================================================
-# DATABASE
+# DB HELPERS
 # =================================================================
+
 def insert_detection_to_db(source, is_dirty, image_path, confidence=None, notes=None):
     conn = get_connection()
     cursor = conn.cursor()
-
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO floor_events (source, is_dirty, confidence, notes, image_path)
         VALUES (%s, %s, %s, %s, %s)
-    """, (source, int(is_dirty), confidence, notes, image_path))
-
+        """,
+        (source, int(is_dirty), confidence, notes, image_path),
+    )
     conn.commit()
     new_id = cursor.lastrowid
-
     cursor.close()
     conn.close()
     return new_id
@@ -127,54 +140,80 @@ def insert_detection_to_db(source, is_dirty, image_path, confidence=None, notes=
 def get_cameras_from_db():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-
     cursor.execute("SELECT id, nama, lokasi, link, aktif FROM cameras")
     rows = cursor.fetchall()
-
     cursor.close()
     conn.close()
     return rows
 
 
-def get_active_wa_recipients():
+def get_active_email_recipients():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("SELECT phone FROM wa_recipients WHERE active = 1")
-    rows = cursor.fetchall()
-
+    try:
+        cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
+        rows = cursor.fetchall()
+        emails = [r["email"] for r in rows]
+    except Exception as e:
+        print("[WARN] Failed reading email_recipients:", e)
+        emails = []
     cursor.close()
     conn.close()
-
-    return [r["phone"] for r in rows]
+    return emails
 
 
 # =================================================================
-# WHATSAPP (FONNTE)
+# EMAIL (GMAIL SMTP)
 # =================================================================
-def send_whatsapp(phone: str, text: str):
-    url = "https://api.fonnte.com/send"
-    headers = {"Authorization": FONNTE_API_KEY}
-    data = {"target": phone, "message": text}
+
+def send_email(subject: str, body: str, to_list: list[str], attachments: list[str] | None = None):
+    if not SMTP_USER or not SMTP_PASS:
+        print("[WARN] SMTP not configured; skip email.")
+        return False
 
     try:
-        res = requests.post(url, headers=headers, data=data, timeout=15)
-        code = getattr(res, "status_code", None)
-        text_res = getattr(res, "text", "")
-        print(f"[WA RESPONSE] status={code} body={text_res}")
-        # interpret success
-        if code and 200 <= code < 300:
-            return True
-        else:
-            return False
+        msg = EmailMessage()
+        msg["From"] = SMTP_USER
+        msg["To"] = ", ".join(to_list)
+        msg["Subject"] = subject
+        msg.set_content(body)
+
+        if attachments:
+            for path in attachments:
+                try:
+                    with open(path, "rb") as f:
+                        data = f.read()
+                    msg.add_attachment(
+                        data,
+                        maintype="image",
+                        subtype="jpeg",
+                        filename=os.path.basename(path),
+                    )
+                except Exception as e:
+                    print(f"[WARN] gagal attach {path}: {e}")
+
+        context = ssl.create_default_context()
+
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(SMTP_USER, SMTP_PASS)
+            server.send_message(msg)
+
+        print(f"[INFO] Email send() OK to {to_list}")
+        return True
+
     except Exception as e:
-        print("[WA ERROR]", e)
+        print("[ERROR] send_email:", e)
+        traceback.print_exc()
         return False
 
 
 # =================================================================
-# CAMERA MONITORING LOOP
+# MONITOR CAMERAS
 # =================================================================
+
 def monitor_cameras_loop(stop_event):
     last_notification = {}
     print("[INFO] Camera monitor thread started")
@@ -183,6 +222,7 @@ def monitor_cameras_loop(stop_event):
         try:
             cameras = get_cameras_from_db()
             wa_list = get_active_wa_recipients()
+            email_list = get_active_email_recipients()
 
             for cam in cameras:
                 if not cam["aktif"]:
@@ -200,7 +240,7 @@ def monitor_cameras_loop(stop_event):
                 ret, frame = cap.read()
                 cap.release()
 
-                if not ret:
+                if not ret or frame is None:
                     print(f"[WARN] No frame from camera {cam_id}")
                     continue
 
@@ -209,7 +249,6 @@ def monitor_cameras_loop(stop_event):
                 if detected:
                     save_dir = os.path.join(BASE_DIR, "assets", "saved_images")
                     os.makedirs(save_dir, exist_ok=True)
-
                     filename = f"cam{cam_id}_{int(time.time())}.jpg"
                     file_path = os.path.join(save_dir, filename)
                     cv2.imwrite(file_path, frame)
@@ -222,11 +261,15 @@ def monitor_cameras_loop(stop_event):
                         notes=f"Detected on camera {src_name}",
                     )
 
-                    for phone in wa_list:
-                        send_whatsapp(
-                            phone,
-                            f"⚠️ *Lantai kotor terdeteksi!*\nKamera: {src_name}\nWaktu: {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                    # Email notification
+                    if email_list:
+                        subj = f"[FloorEye] Lantai kotor terdeteksi ({src_name})"
+                        body = (
+                            f"Lantai kotor terdeteksi di {src_name}\n"
+                            f"Waktu: {time.strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                            f"Lampiran berisi gambar hasil deteksi."
                         )
+                        send_email(subj, body, email_list, attachments=[file_path])
 
                     last_notification[cam_id] = now
 
@@ -245,89 +288,68 @@ def root():
     return {"message": "FloorEye backend berjalan 🚀", "status": "ok"}
 
 
-@app.post("/wa-recipients")
-def add_wa_recipient(payload: WARecipientCreate):
-    conn = get_connection()
-    cursor = conn.cursor()
+# ----- Email recipients -----
 
-    cursor.execute(
-        "INSERT INTO wa_recipients (phone, active) VALUES (%s, %s)",
-        (payload.phone, int(payload.active))
-    )
-    conn.commit()
-
-    new_id = cursor.lastrowid
-    cursor.close()
-    conn.close()
-
-    return {"id": new_id, "message": "Nomor WA ditambahkan"}
-
-
-@app.get("/wa-recipients")
-def get_wa_recipients():
+@app.get("/email-recipients")
+def list_email_recipients():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("SELECT * FROM wa_recipients ORDER BY id DESC")
+    cursor.execute("SELECT * FROM email_recipients ORDER BY id DESC")
     rows = cursor.fetchall()
-
     cursor.close()
     conn.close()
     return rows
 
 
-@app.post("/test-wa")
-def test_wa(payload: dict):
-    """POST test WA. Payload: { "phone": "62812...", "message": "..." }
-       If phone omitted, sends to active recipients from DB.
-    """
-    phone = payload.get("phone")
-    message = payload.get("message", "[FloorEye] Test notifikasi WA")
-
-    if not phone:
-        try:
-            phones = get_active_wa_recipients()
-        except Exception as e:
-            print("[ERROR] reading WA recipients:", e)
-            raise HTTPException(status_code=500, detail="Failed reading recipients from DB")
-
-        if not phones:
-            return {"sent": False, "message": "No WA recipients configured"}
-
-        results = {}
-        for p in phones:
-            ok = send_whatsapp(p, message)
-            results[p] = ok
-
-        return {"sent": any(results.values()), "results": results}
-    else:
-        ok = send_whatsapp(phone, message)
-        return {"sent": ok, "phone": phone}
+@app.post("/email-recipients")
+def create_email_recipient(payload: EmailRecipientCreate):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "INSERT INTO email_recipients (email, active) VALUES (%s, %s)",
+        (payload.email, int(payload.active)),
+    )
+    conn.commit()
+    new_id = cursor.lastrowid
+    cursor.close()
+    conn.close()
+    return {"id": new_id, "message": "Penerima email ditambahkan"}
 
 
-@app.get("/test-wa")
-def test_wa_get():
-    """Convenience GET for quick browser test: sends to active recipients."""
-    try:
-        phones = get_active_wa_recipients()
-    except Exception as e:
-        print("[ERROR] reading WA recipients:", e)
-        raise HTTPException(status_code=500, detail="Failed reading recipients from DB")
+@app.patch("/email-recipients/{rid}")
+def patch_email_recipient(rid: int, body: dict):
+    if "active" not in body:
+        raise HTTPException(status_code=400, detail="Field 'active' wajib")
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE email_recipients SET active = %s WHERE id = %s",
+        (int(body["active"]), rid),
+    )
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "Status penerima email diperbarui"}
 
-    if not phones:
-        return {"sent": False, "message": "No WA recipients configured"}
 
-    results = {}
-    for p in phones:
-        ok = send_whatsapp(p, "[FloorEye] Test notifikasi WA (GET)")
-        results[p] = ok
+@app.get("/test-email")
+def test_email_get():
+    emails = get_active_email_recipients()
+    if not emails:
+        return {"sent": False, "message": "No email recipients configured"}
 
-    return {"sent": any(results.values()), "results": results}
+    ok = send_email(
+        "[FloorEye] Test Email",
+        "Ini adalah email test dari FloorEye (GET endpoint).",
+        emails,
+    )
+    return {"sent": ok, "recipients": emails}
 
+
+# ----- Detect endpoints -----
 
 @app.post("/detect/image")
 async def detect_image(file: UploadFile = File(...), notes: Optional[str] = None):
-
     file_bytes = await file.read()
     frame = decode_image_from_bytes(file_bytes)
 
@@ -350,13 +372,12 @@ async def detect_image(file: UploadFile = File(...), notes: Optional[str] = None
         "is_dirty": is_dirty,
         "notes": notes,
         "image_path": file_path,
-        "message": "Deteksi berhasil"
+        "message": "Deteksi berhasil",
     }
 
 
 @app.post("/detect/frame")
 async def detect_frame(payload: CameraFramePayload):
-
     image_bytes = decode_image_from_base64(payload.image_base64)
     frame = decode_image_from_bytes(image_bytes)
 
@@ -379,7 +400,7 @@ async def detect_frame(payload: CameraFramePayload):
         "is_dirty": is_dirty,
         "notes": payload.notes,
         "image_path": file_path,
-        "message": "Deteksi kamera disimpan"
+        "message": "Deteksi kamera disimpan",
     }
 
 
@@ -387,42 +408,38 @@ async def detect_frame(payload: CameraFramePayload):
 def get_history(limit: int = 50, offset: int = 0):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT id, source, is_dirty, confidence, notes, created_at
         FROM floor_events
         ORDER BY created_at DESC
         LIMIT %s OFFSET %s
-    """, (limit, offset))
-
+        """,
+        (limit, offset),
+    )
     rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
 
-    events = [
+    return [
         HistoryItem(
             id=r["id"],
             source=r["source"],
             is_dirty=bool(r["is_dirty"]),
             confidence=r["confidence"],
             notes=r["notes"],
-            created_at=r["created_at"].isoformat()
+            created_at=r["created_at"].isoformat(),
         )
         for r in rows
     ]
-
-    cursor.close()
-    conn.close()
-
-    return events
 
 
 @app.get("/image/{event_id}")
 def get_image(event_id: int):
     conn = get_connection()
     cursor = conn.cursor()
-
     cursor.execute("SELECT image_path FROM floor_events WHERE id = %s", (event_id,))
     row = cursor.fetchone()
-
     cursor.close()
     conn.close()
 
@@ -435,7 +452,6 @@ def get_image(event_id: int):
 
     with open(file_path, "rb") as f:
         return Response(content=f.read(), media_type="image/jpeg")
-
 
 
 if __name__ == "__main__":

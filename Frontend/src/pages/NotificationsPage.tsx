@@ -1,19 +1,20 @@
 import { useEffect, useState } from "react";
 import {
-  listWARecipients,
-  createWARecipient,
-  toggleWARecipient,
-} from "../services/wa.service";
+  listEmailRecipients,
+  createEmailRecipient,
+  toggleEmailRecipient,
+  deleteEmailRecipient,
+} from "../services/email.service";
 
 export default function NotificationsPage() {
   const [list, setList] = useState<any[]>([]);
-  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
 
   const fetch = async () => {
     setLoading(true);
     try {
-      const res = await listWARecipients();
+      const res = await listEmailRecipients();
       setList(res || []);
     } catch (e) {
       console.error(e);
@@ -27,34 +28,37 @@ export default function NotificationsPage() {
   }, []);
 
   const handleAdd = async () => {
-    if (!phone) return;
-    if (!phone.startsWith("62"))
-      return alert("Nomor harus format internasional. Contoh: 6281234567890");
-
-    await createWARecipient({ phone, active: true });
-    setPhone("");
+    if (!email) return;
+    await createEmailRecipient({ email, active: true });
+    setEmail("");
     fetch();
   };
 
   const handleToggle = async (id: number, active: boolean) => {
-    await toggleWARecipient(id, !active);
+    await toggleEmailRecipient(id, !active);
+    fetch();
+  };
+
+  const handleDelete = async (id: number) => {
+    if (!confirm("Hapus email ini?")) return;
+    await deleteEmailRecipient(id);
     fetch();
   };
 
   return (
     <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-semibold">Notifikasi WhatsApp</h1>
+      <h1 className="text-2xl font-semibold">Notifikasi Email</h1>
 
       <div className="flex gap-3">
         <input
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          placeholder="Contoh: 6281234567890"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="email@example.com"
           className="p-2 border rounded flex-1"
         />
         <button
           onClick={handleAdd}
-          className="px-4 py-2 bg-green-600 text-white rounded"
+          className="px-4 py-2 bg-blue-600 text-white rounded"
         >
           Tambah
         </button>
@@ -69,17 +73,25 @@ export default function NotificationsPage() {
             className="p-3 bg-white border rounded flex items-center justify-between"
           >
             <div>
-              <div className="font-semibold">{r.phone}</div>
+              <div className="font-semibold">{r.email}</div>
               <div className="text-xs text-slate-600">
                 {r.active ? "Aktif" : "Non-aktif"}
               </div>
             </div>
-            <div>
+
+            <div className="flex gap-2">
               <button
                 onClick={() => handleToggle(r.id, r.active)}
                 className="px-3 py-1 border rounded"
               >
                 {r.active ? "Matikan" : "Aktifkan"}
+              </button>
+
+              <button
+                onClick={() => handleDelete(r.id)}
+                className="px-3 py-1 border border-red-500 text-red-500 rounded"
+              >
+                Hapus
               </button>
             </div>
           </div>
