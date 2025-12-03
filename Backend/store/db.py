@@ -1,21 +1,14 @@
 import mysql.connector
-from mysql.connector import pooling
+import os
+from dotenv import load_dotenv
 
-DB_CONFIG = {
-    "host": "localhost",
-    "port": 3306,
-    "user": "root",
-    "password": "",
-    "database": "floor_eye",
-}
-
-connection_pool = pooling.MySQLConnectionPool(
-    pool_name="flooreye_pool",
-    pool_size=5,
-    pool_reset_session=True,
-    **DB_CONFIG,
-)
-
+load_dotenv()
 
 def get_connection():
-    return connection_pool.get_connection()
+    return mysql.connector.connect(
+        host=os.getenv("DB_HOST", "127.0.0.1"),
+        port=int(os.getenv("DB_PORT", "3306")),
+        user=os.getenv("DB_USER", "root"),
+        password=os.getenv("DB_PASS", ""),
+        database=os.getenv("DB_NAME", "floor_eye"),
+    )
