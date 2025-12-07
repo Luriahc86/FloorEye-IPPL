@@ -29,20 +29,37 @@ export default function NotificationsPage() {
 
   const handleAdd = async () => {
     if (!email) return;
-    await createEmailRecipient({ email, active: true });
-    setEmail("");
-    fetch();
+    try {
+      await createEmailRecipient({ email, active: true });
+      setEmail("");
+      fetch();
+    } catch (e) {
+      console.error("Failed to add email:", e);
+      alert("Gagal menambah email");
+    }
   };
 
   const handleToggle = async (id: number, active: boolean) => {
-    await toggleEmailRecipient(id, !active);
-    fetch();
+    try {
+      await toggleEmailRecipient(id, !active);
+      // Optimistic update: update state langsung tanpa refetch
+      setList(list.map((r) => (r.id === id ? { ...r, active: !active } : r)));
+    } catch (e) {
+      console.error("Failed to toggle:", e);
+      alert("Gagal mengubah status");
+    }
   };
 
   const handleDelete = async (id: number) => {
     if (!confirm("Hapus email ini?")) return;
-    await deleteEmailRecipient(id);
-    fetch();
+    try {
+      await deleteEmailRecipient(id);
+      // Optimistic update: hapus langsung dari state tanpa refetch
+      setList(list.filter((r) => r.id !== id));
+    } catch (e) {
+      console.error("Failed to delete:", e);
+      alert("Gagal menghapus email");
+    }
   };
 
   return (
@@ -58,13 +75,19 @@ export default function NotificationsPage() {
         />
         <button
           onClick={handleAdd}
-          className="px-4 py-2 bg-blue-600 text-white rounded"
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
         >
           Tambah
         </button>
       </div>
 
       {loading && <p>Memuat...</p>}
+
+      {list.length === 0 && !loading && (
+        <p className="text-slate-500 text-center py-6">
+          Belum ada penerima email terdaftar
+        </p>
+      )}
 
       <div className="space-y-2">
         {list.map((r) => (
@@ -75,21 +98,21 @@ export default function NotificationsPage() {
             <div>
               <div className="font-semibold">{r.email}</div>
               <div className="text-xs text-slate-600">
-                {r.active ? "Aktif" : "Non-aktif"}
+                {r.active ? "✅ Aktif" : "❌ Non-aktif"}
               </div>
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={() => handleToggle(r.id, r.active)}
-                className="px-3 py-1 border rounded"
+                className="px-3 py-1 border rounded hover:bg-gray-100"
               >
                 {r.active ? "Matikan" : "Aktifkan"}
               </button>
 
               <button
                 onClick={() => handleDelete(r.id)}
-                className="px-3 py-1 border border-red-500 text-red-500 rounded"
+                className="px-3 py-1 border border-red-500 text-red-500 rounded hover:bg-red-50"
               >
                 Hapus
               </button>

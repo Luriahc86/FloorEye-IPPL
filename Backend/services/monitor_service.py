@@ -7,10 +7,6 @@ from store.db import get_connection
 from services.email_service import send_email
 from computer_vision.detector import detect_dirty_floor
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_DIR = os.path.join(BASE_DIR, "..", "assets", "saved_images")
-os.makedirs(SAVE_DIR, exist_ok=True)
-
 NOTIFY_INTERVAL = int(os.getenv("NOTIFY_INTERVAL", "60"))
 
 def get_cameras():
@@ -63,22 +59,33 @@ def monitor_loop(stop):
                     print(f"[WARN] No frame from camera {cam_id}")
                     continue
 
-                detected = detect_dirty_floor(frame, debug=False)
-                print(f"[DEBUG] Camera {cam_id} dirty={detected}")
+                detected, confidence = detect_dirty_floor(frame, debug=False)
+                print(f"[DEBUG] Camera {cam_id} dirty={detected} confidence={confidence:.2f}")
 
                 if detected:
-                    filename = f"cam{cam_id}_{int(time.time())}.jpg"
-                    filepath = os.path.join(SAVE_DIR, filename)
-                    cv2.imwrite(filepath, frame)
-                    print(f"[INFO] Saved image: {filepath}")
+                    # Encode frame ke JPEG bytes untuk disimpan ke database
+                    _, frame_bytes = cv2.imencode('.jpg', frame)
+                    image_data = frame_bytes.tobytes()
+                    
+                    try:
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO floor_events (source,is_dirty,confidence,image_data,notes) VALUES (%s,%s,%s,%s,%s)",
+                            (f"camera_{cam_id}", int(detected), float(confidence), image_data, f"Detected by monitor on camera {cam_id}"),
+                        )
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                    except Exception as e:
+                        print(f"[ERROR] Failed insert detection to DB: {e}")
 
                     if emails:
-                        print(f"[INFO] Sending alert to {len(emails)} recipients")
+                        print(f"[INFO] Sending alert to {len(emails)} recipients (no attachment)")
                         ok = send_email(
                             f"[FloorEye] Lantai Kotor Terdeteksi ({cam['nama']})",
                             f"Otomatis mendeteksi lantai kotor pada kamera {cam['nama']} pada {time.strftime('%Y-%m-%d %H:%M:%S')}.",
                             emails,
-                            [filepath]
                         )
                         print(f"[INFO] Email send result: {ok}")
                     else:

@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from typing import List, Optional
 from pydantic import BaseModel
 from store.db import get_connection
+from fastapi.responses import Response
 
 router = APIRouter()
 
@@ -12,7 +13,6 @@ class HistoryItem(BaseModel):
     confidence: Optional[float] = None
     notes: Optional[str] = None
     created_at: str
-    image_path: Optional[str] = None
 
 @router.get("/", response_model=List[HistoryItem])
 def get_history(limit: int = 50, offset: int = 0):
@@ -21,7 +21,7 @@ def get_history(limit: int = 50, offset: int = 0):
     cursor = conn.cursor(dictionary=True)
     
     cursor.execute("""
-        SELECT id, source, is_dirty, confidence, notes, created_at, image_path
+        SELECT id, source, is_dirty, confidence, notes, created_at
         FROM floor_events
         ORDER BY created_at DESC
         LIMIT %s OFFSET %s
@@ -40,19 +40,16 @@ def get_history(limit: int = 50, offset: int = 0):
             confidence=r.get("confidence"),
             notes=r.get("notes"),
             created_at=str(r.get("created_at")),
-            image_path=r.get("image_path"),
         ))
     
     return history
 
 @router.get("/{event_id}/image")
 def get_image(event_id: int):
-    """Get image file from event."""
-    from fastapi.responses import Response
-    
+    """Get image data from database event."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT image_path FROM floor_events WHERE id = %s", (event_id,))
+    cursor.execute("SELECT image_data FROM floor_events WHERE id = %s", (event_id,))
     row = cursor.fetchone()
     cursor.close()
     conn.close()
@@ -60,11 +57,6 @@ def get_image(event_id: int):
     if not row or not row[0]:
         return {"error": "Image not found"}
     
-    import os
-    path = row[0]
-    if not os.path.exists(path):
-        return {"error": "File not found"}
-    
-    with open(path, "rb") as f:
-        return Response(content=f.read(), media_type="image/jpeg")
+    image_data = row[0]
+    return Response(content=image_data, media_type="image/jpeg")
 

@@ -11,10 +11,6 @@ from computer_vision.detector import detect_dirty_floor
 
 router = APIRouter()
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SAVE_DIR = os.path.join(BASE_DIR, "..", "assets", "saved_images")
-os.makedirs(SAVE_DIR, exist_ok=True)
-
 class FramePayload(BaseModel):
     image_base64: str
     notes: str | None = None
@@ -33,23 +29,31 @@ async def detect_image(file: UploadFile = File(...)):
     raw = await file.read()
     frame = decode_bytes(raw)
 
-    detected = detect_dirty_floor(frame, debug=False)
+    detected, confidence = detect_dirty_floor(frame, debug=False)
 
-    filename = f"upload_{int(time.time())}.jpg"
-    path = os.path.join(SAVE_DIR, filename)
-    cv2.imwrite(path, frame)
-
+    # Save image data to database (LONGBLOB), not file system
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute(
-        "INSERT INTO floor_events (source,is_dirty,image_path) VALUES (%s,%s,%s)",
-        ("upload", int(detected), path),
+        "INSERT INTO floor_events (source,is_dirty,confidence,image_data) VALUES (%s,%s,%s,%s)",
+        ("upload", int(detected), float(confidence), raw),
     )
     conn.commit()
+    event_id = cursor.lastrowid
+    
+    # Get the inserted event to return full data
+    cursor.execute("SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s", (event_id,))
+    event = cursor.fetchone()
     cursor.close()
     conn.close()
 
-    return {"detected": detected, "image_path": path}
+    return {
+        "id": event["id"],
+        "is_dirty": bool(event["is_dirty"]),
+        "confidence": float(event["confidence"]),
+        "created_at": event["created_at"].isoformat() if event["created_at"] else None,
+        "source": "upload",
+    }
 
 @router.post("/frame")
 async def detect_frame(payload: FramePayload):
@@ -58,23 +62,32 @@ async def detect_frame(payload: FramePayload):
         image_bytes = decode_b64(payload.image_base64)
         frame = decode_bytes(image_bytes)
 
-        detected = detect_dirty_floor(frame, debug=False)
+        detected, confidence = detect_dirty_floor(frame, debug=False)
 
-        filename = f"camera_{int(time.time())}.jpg"
-        path = os.path.join(SAVE_DIR, filename)
-        cv2.imwrite(path, frame)
-
+        # Save image data to database (LONGBLOB), not file system
         conn = get_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
         cursor.execute(
-            "INSERT INTO floor_events (source,is_dirty,image_path,notes) VALUES (%s,%s,%s,%s)",
-            ("camera", int(detected), path, payload.notes),
+            "INSERT INTO floor_events (source,is_dirty,confidence,image_data,notes) VALUES (%s,%s,%s,%s,%s)",
+            ("camera", int(detected), float(confidence), image_bytes, payload.notes),
         )
         conn.commit()
+        event_id = cursor.lastrowid
+        
+        # Get the inserted event to return full data
+        cursor.execute("SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s", (event_id,))
+        event = cursor.fetchone()
         cursor.close()
         conn.close()
 
-        return {"detected": detected, "image_path": path, "notes": payload.notes}
+        return {
+            "id": event["id"],
+            "is_dirty": bool(event["is_dirty"]),
+            "confidence": float(event["confidence"]),
+            "created_at": event["created_at"].isoformat() if event["created_at"] else None,
+            "source": "camera",
+            "notes": payload.notes,
+        }
     except Exception as e:
         print(f"[ERROR] detect_frame: {e}")
         raise HTTPException(500, f"Detection failed: {str(e)}")

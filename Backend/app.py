@@ -44,11 +44,11 @@ def health_check():
 
 @app.get("/image/{event_id}")
 def get_image_convenience(event_id: int):
-    """Convenience endpoint: GET /image/{id} → fetch image from floor_events."""
+    """Convenience endpoint: GET /image/{id} → fetch image data from database."""
     try:
         conn = get_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT image_path FROM floor_events WHERE id = %s", (event_id,))
+        cursor.execute("SELECT image_data FROM floor_events WHERE id = %s", (event_id,))
         row = cursor.fetchone()
         cursor.close()
         conn.close()
@@ -56,13 +56,8 @@ def get_image_convenience(event_id: int):
         if not row or not row[0]:
             return {"error": "Image not found"}
         
-        import os
-        path = row[0]
-        if not os.path.exists(path):
-            return {"error": "File not found"}
-        
-        with open(path, "rb") as f:
-            return Response(content=f.read(), media_type="image/jpeg")
+        image_data = row[0]
+        return Response(content=image_data, media_type="image/jpeg")
     except Exception as e:
         print(f"[ERROR] get_image: {e}")
         return {"error": str(e)}

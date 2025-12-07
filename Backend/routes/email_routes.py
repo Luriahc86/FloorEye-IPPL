@@ -47,6 +47,16 @@ def patch_recipient(rid: int, body: dict):
     conn.close()
     return {"message": "Updated"}
 
+@router.delete("/{rid}")
+def delete_recipient(rid: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM email_recipients WHERE id=%s", (rid,))
+    conn.commit()
+    cursor.close()
+    conn.close()
+    return {"message": "Deleted"}
+
 @router.get("/test")
 def test_email():
     """Send test email to all active recipients."""
