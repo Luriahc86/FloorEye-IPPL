@@ -39,16 +39,6 @@ export default function Sidebar() {
           Riwayat Deteksi
         </NavLink>
 
-        <NavLink
-          to="/cameras"
-          className={({ isActive }) =>
-            `block px-4 py-2 rounded-lg ${
-              isActive ? "bg-blue-600 text-white" : "hover:bg-blue-50"
-            }`
-          }
-        >
-          Kelola CCTV
-        </NavLink>
 
         <NavLink
           to="/notifications"
