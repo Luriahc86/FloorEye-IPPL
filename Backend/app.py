@@ -29,7 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include all routers
 app.include_router(email_router, prefix="/email-recipients", tags=["Email"])
 app.include_router(detect_router, prefix="/detect", tags=["Detection"])
 app.include_router(history_router, prefix="/history", tags=["History"])
