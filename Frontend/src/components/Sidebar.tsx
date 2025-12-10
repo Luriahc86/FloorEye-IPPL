@@ -2,7 +2,7 @@ import { NavLink } from "react-router-dom";
 
 export default function Sidebar() {
   return (
-    <aside className="w-64 bg-white shadow-lg border-r h-full p-6">
+    <aside className="w-64 bg-white shadow-lg border-r h-full p-6 overflow-y-auto">
       <h1 className="text-2xl font-bold text-blue-600 mb-6">FloorEye</h1>
 
       <nav className="space-y-3">
@@ -14,7 +14,7 @@ export default function Sidebar() {
             }`
           }
         >
-          Upload Gambar
+          📤 Upload Gambar
         </NavLink>
 
         <NavLink
@@ -25,7 +25,7 @@ export default function Sidebar() {
             }`
           }
         >
-          Live Camera
+          📹 Live Camera
         </NavLink>
 
         <NavLink
@@ -36,7 +36,18 @@ export default function Sidebar() {
             }`
           }
         >
-          Riwayat Deteksi
+          📋 Riwayat Deteksi
+        </NavLink>
+
+        <NavLink
+          to="/notifications"
+          className={({ isActive }) =>
+            `block px-4 py-2 rounded-lg ${
+              isActive ? "bg-blue-600 text-white" : "hover:bg-blue-50"
+            }`
+          }
+        >
+          🔔 Notifikasi Email
         </NavLink>
       </nav>
     </aside>

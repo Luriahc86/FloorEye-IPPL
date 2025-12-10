@@ -1,3 +1,9 @@
+<<<<<<< HEAD
 db.py
 _pycache__/
 *.pyc
+=======
+.env
+db.py
+__pycache__/
+>>>>>>> dev
