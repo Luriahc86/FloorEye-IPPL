@@ -8,6 +8,7 @@ import os
 
 from store.db import get_connection
 from computer_vision.detector import detect_dirty_floor
+from services.email_service import send_email   # <-- PENTING: import email sender
 
 router = APIRouter()
 
@@ -24,6 +25,16 @@ def decode_b64(b64):
         b64 = b64.split(",", 1)[1]
     return base64.b64decode(b64)
 
+def get_all_recipients():
+    """Get list of all recipient emails from database."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT email FROM email_recipients")
+    rows = cursor.fetchall()
+    cursor.close()
+    conn.close()
+    return [r[0] for r in rows]
+
 @router.post("/image")
 async def detect_image(file: UploadFile = File(...)):
     raw = await file.read()
@@ -31,7 +42,7 @@ async def detect_image(file: UploadFile = File(...)):
 
     detected, confidence = detect_dirty_floor(frame, debug=False)
 
-    # Save image data to database (LONGBLOB), not file system
+    # Save event to DB
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
     cursor.execute(
@@ -40,12 +51,27 @@ async def detect_image(file: UploadFile = File(...)):
     )
     conn.commit()
     event_id = cursor.lastrowid
-    
-    # Get the inserted event to return full data
+
     cursor.execute("SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s", (event_id,))
     event = cursor.fetchone()
     cursor.close()
     conn.close()
+
+    # 🔥 Trigger email (only if dirty)
+    if detected:
+        recipients = get_all_recipients()
+        print("[DEBUG] DIRTY FLOOR DETECTED (UPLOAD), sending email to:", recipients)
+
+        send_email(
+            subject="⚠️ FloorEye Alert: Area Kotor Terdeteksi",
+            body=f"Sistem mendeteksi area kotor.\nConfidence: {confidence:.2f}",
+            to_list=recipients,
+            attachments=[f"temp_event_{event_id}.jpg"]
+        )
+
+        # Save temporary image for attachment
+        with open(f"temp_event_{event_id}.jpg", "wb") as f:
+            f.write(raw)
 
     return {
         "id": event["id"],
@@ -64,7 +90,7 @@ async def detect_frame(payload: FramePayload):
 
         detected, confidence = detect_dirty_floor(frame, debug=False)
 
-        # Save image data to database (LONGBLOB), not file system
+        # Save event to DB
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
         cursor.execute(
@@ -73,12 +99,28 @@ async def detect_frame(payload: FramePayload):
         )
         conn.commit()
         event_id = cursor.lastrowid
-        
-        # Get the inserted event to return full data
+
         cursor.execute("SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s", (event_id,))
         event = cursor.fetchone()
         cursor.close()
         conn.close()
+
+        # 🔥 TRIGGER EMAIL NOTIFICATION
+        if detected:
+            recipients = get_all_recipients()
+            print("[DEBUG] DIRTY FLOOR DETECTED (FRAME), sending email to:", recipients)
+
+            # Save attachment temporarily
+            temp_path = f"temp_event_{event_id}.jpg"
+            with open(temp_path, "wb") as f:
+                f.write(image_bytes)
+
+            send_email(
+                subject="⚠️ FloorEye Alert: Area Kotor Terdeteksi",
+                body=f"Sistem mendeteksi area kotor pada kamera.\nConfidence: {confidence:.2f}",
+                to_list=recipients,
+                attachments=[temp_path]
+            )
 
         return {
             "id": event["id"],
@@ -88,6 +130,7 @@ async def detect_frame(payload: FramePayload):
             "source": "camera",
             "notes": payload.notes,
         }
+
     except Exception as e:
         print(f"[ERROR] detect_frame: {e}")
         raise HTTPException(500, f"Detection failed: {str(e)}")

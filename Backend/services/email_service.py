@@ -3,6 +3,9 @@ import ssl
 import smtplib
 from email.message import EmailMessage
 import traceback
+from dotenv import load_dotenv
+
+load_dotenv()
 
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
@@ -47,7 +50,6 @@ def send_email(subject, body, to_list, attachments=None):
 
         print(f"[INFO] Connecting to SMTP {SMTP_HOST}:{SMTP_PORT}")
         try:
-            # Try STARTTLS first (port 587)
             with smtplib.SMTP(SMTP_HOST, int(SMTP_PORT), timeout=20) as server:
                 server.ehlo()
                 print("[INFO] EHLO sent")
@@ -62,7 +64,6 @@ def send_email(subject, body, to_list, attachments=None):
         except Exception as e1:
             print(f"[WARN] STARTTLS failed: {e1}. Trying SMTP_SSL on port 465...")
             try:
-                # Fallback to SMTP_SSL (port 465)
                 with smtplib.SMTP_SSL(SMTP_HOST, 465, context=context, timeout=20) as server:
                     server.ehlo()
                     print("[INFO] EHLO sent (SSL)")
