@@ -2,15 +2,15 @@ import { useState } from "react";
 
 interface Props {
   onImageSelected: (file: File) => void;
-  onDetect: () => void; 
-  loading: boolean; // ⬅️ WAJIB untuk fix error TS
+  onDetect: () => void;
+  loading: boolean;
 }
 
 export default function ImageUploader({ onImageSelected, onDetect, loading }: Props) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (loading) return; // prevent input while loading
+    if (loading) return;
 
     const file = e.target.files?.[0];
     if (file) {
@@ -32,9 +32,9 @@ export default function ImageUploader({ onImageSelected, onDetect, loading }: Pr
       />
 
       <button
-        onClick={!loading ? onDetect : undefined}
+        onClick={() => !loading && onDetect()}
         disabled={!selectedFile || loading}
-        className={`px-4 py-2 rounded-md text-white transition w-full
+        className={`px-4 py-2 rounded-md text-white w-full transition
           ${
             !selectedFile || loading
               ? "bg-gray-400 cursor-not-allowed"

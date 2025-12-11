@@ -26,9 +26,6 @@ export default function CameraViewer({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DetectionResponse | null>(null);
   const [autoDetect, setAutoDetect] = useState<boolean>(false);
-  const [detectionHistory, setDetectionHistory] = useState<
-    Array<DetectionResponse & { timestamp: string }>
-  >([]);
 
   /** 🔵 Start Camera */
   const startCamera = async () => {
@@ -38,7 +35,6 @@ export default function CameraViewer({
       });
 
       streamRef.current = stream;
-
       if (videoRef.current) videoRef.current.srcObject = stream;
       await videoRef.current?.play();
 
@@ -84,7 +80,7 @@ export default function CameraViewer({
     return canvas.toDataURL("image/jpeg", 0.95);
   };
 
-  /** 🟢 Auto Detect Effect */
+  /** 🟢 Auto Detect */
   useEffect(() => {
     if (autoDetect && isActive && !isDetecting) {
       const runDetect = async () => {
@@ -92,7 +88,7 @@ export default function CameraViewer({
           setIsDetecting(true);
           const base64 = captureFrame();
 
-          const response = await fetch("http://localhost:8000/detect/frame", {
+          const res = await fetch("http://localhost:8000/detect/frame", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -101,14 +97,8 @@ export default function CameraViewer({
             }),
           });
 
-          const data: DetectionResponse = await response.json();
+          const data: DetectionResponse = await res.json();
           setResult(data);
-
-          setDetectionHistory((prev) => [
-            { ...data, timestamp: new Date().toISOString() },
-            ...prev,
-          ]);
-
           onResult?.(data);
         } catch (err) {
           console.error(err);
@@ -134,16 +124,13 @@ export default function CameraViewer({
 
       const base64 = captureFrame();
 
-      const response = await fetch("http://localhost:8000/detect/frame", {
+      const res = await fetch("http://localhost:8000/detect/frame", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_base64: base64,
-          notes: "live-camera-frame",
-        }),
+        body: JSON.stringify({ image_base64: base64, notes: "manual-detect" }),
       });
 
-      const data: DetectionResponse = await response.json();
+      const data: DetectionResponse = await res.json();
       setResult(data);
       onResult?.(data);
     } catch (err) {
@@ -194,7 +181,6 @@ export default function CameraViewer({
         )}
       </div>
 
-      {/* LIVE STATUS */}
       {result && isActive && (
         <div
           className={`p-4 rounded-lg border-2 text-center font-bold text-xl ${

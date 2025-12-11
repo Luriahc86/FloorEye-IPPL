@@ -5,6 +5,7 @@ import UploadPage from "../pages/UploadPage";
 import LiveCameraPage from "../pages/LiveCameraPage";
 import HistoryPage from "../pages/HistoryPage";
 import NotificationsPage from "../pages/NotificationsPage";
+
 const router = createBrowserRouter([
   {
     path: "/",
