@@ -19,7 +19,7 @@ export default function CameraViewer({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const detectIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const detectIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [isActive, setIsActive] = useState<boolean>(false);
   const [isDetecting, setIsDetecting] = useState<boolean>(false);
