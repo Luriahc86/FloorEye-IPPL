@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import {
   listEmailRecipients,
   createEmailRecipient,
-  toggleEmailRecipient,
   deleteEmailRecipient,
 } from "../services/email.service";
 
@@ -39,22 +38,10 @@ export default function NotificationsPage() {
     }
   };
 
-  const handleToggle = async (id: number, active: boolean) => {
-    try {
-      await toggleEmailRecipient(id, !active);
-      // Optimistic update: update state langsung tanpa refetch
-      setList(list.map((r) => (r.id === id ? { ...r, active: !active } : r)));
-    } catch (e) {
-      console.error("Failed to toggle:", e);
-      alert("Gagal mengubah status");
-    }
-  };
-
   const handleDelete = async (id: number) => {
     if (!confirm("Hapus email ini?")) return;
     try {
       await deleteEmailRecipient(id);
-      // Optimistic update: hapus langsung dari state tanpa refetch
       setList(list.filter((r) => r.id !== id));
     } catch (e) {
       console.error("Failed to delete:", e);
@@ -97,26 +84,14 @@ export default function NotificationsPage() {
           >
             <div>
               <div className="font-semibold">{r.email}</div>
-              <div className="text-xs text-slate-600">
-                {r.active ? "✅ Aktif" : "❌ Non-aktif"}
-              </div>
             </div>
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleToggle(r.id, r.active)}
-                className="px-3 py-1 border rounded hover:bg-gray-100"
-              >
-                {r.active ? "Matikan" : "Aktifkan"}
-              </button>
-
-              <button
-                onClick={() => handleDelete(r.id)}
-                className="px-3 py-1 border border-red-500 text-red-500 rounded hover:bg-red-50"
-              >
-                Hapus
-              </button>
-            </div>
+            <button
+              onClick={() => handleDelete(r.id)}
+              className="px-3 py-1 border border-red-500 text-red-500 rounded hover:bg-red-50"
+            >
+              Hapus
+            </button>
           </div>
         ))}
       </div>

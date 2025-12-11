@@ -16,7 +16,15 @@ CREATE TABLE floor_events (
     INDEX idx_is_dirty (is_dirty)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE email_recipients (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,                    
+    active BOOLEAN NOT NULL DEFAULT 1,                     
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_active (active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+DROP TABLE IF EXISTS cameras;
 CREATE TABLE cameras (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nama VARCHAR(255) NOT NULL,                            
@@ -25,12 +33,4 @@ CREATE TABLE cameras (
     aktif BOOLEAN NOT NULL DEFAULT 1,                      
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_aktif (aktif)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE email_recipients (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    email VARCHAR(255) NOT NULL UNIQUE,                    
-    active BOOLEAN NOT NULL DEFAULT 1,                     
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_active (active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
