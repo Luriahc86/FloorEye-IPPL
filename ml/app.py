@@ -3,12 +3,10 @@ from fastapi.middleware.cors import CORSMiddleware
 import cv2
 import numpy as np
 import os
-import uvicorn
 
 from detector import detect
 
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
-
 
 app = FastAPI(
     title="FloorEye ML Service",
@@ -22,15 +20,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 @app.get("/health")
 def health_check():
     return {"status": "healthy", "service": "ml"}
 
-
 @app.post("/detect")
-async def detect_floor(file: UploadFile = File(...)):
-    image_bytes = await file.read()
+async def detect_floor(image: UploadFile = File(...)):
+    image_bytes = await image.read()
 
     frame = cv2.imdecode(
         np.frombuffer(image_bytes, np.uint8),
@@ -38,17 +34,15 @@ async def detect_floor(file: UploadFile = File(...)):
     )
 
     if frame is None:
-        raise HTTPException(400, "Invalid image")
+        raise HTTPException(status_code=400, detail="Invalid image")
 
-    is_dirty, confidence = detect(frame, conf_threshold=CONF_THRESHOLD)
+    try:
+        is_dirty, confidence = detect(frame, conf_threshold=CONF_THRESHOLD)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
 
     return {
         "is_dirty": is_dirty,
         "confidence": round(confidence, 3),
         "conf_threshold": CONF_THRESHOLD,
     }
-
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", "7860"))
-    uvicorn.run("app:app", host="0.0.0.0", port=port)
