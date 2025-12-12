@@ -5,10 +5,10 @@ from contextlib import asynccontextmanager
 import threading
 
 # Routers
-from backend.routes.email_routes import router as email_router
-from backend.routes.detection_routes import router as detect_router
-from backend.routes.history_routes import router as history_router
-from backend.routes.camera_routes import router as camera_router
+from routes.email_routes import router as email_router
+from routes.detection_routes import router as detect_router
+from routes.history_routes import router as history_router
+from routes.camera_routes import router as camera_router
 
 # Services
 from backend.services.monitor_service import monitor_loop
