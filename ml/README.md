@@ -3,8 +3,7 @@ title: IPPL Ml
 emoji: 🔥
 colorFrom: yellow
 colorTo: yellow
-sdk: python
-python_version: 3.11
+sdk: docker
 pinned: false
 license: mit
 short_description: BIG PROJECT IPPL
