@@ -11,11 +11,10 @@ from routes.history_routes import router as history_router
 from routes.camera_routes import router as camera_router
 
 # Services
-from backend.services.monitor_service import monitor_loop
+from services.monitor_service import monitor_loop
 
 # Database
-from backend.store.db import get_connection
-
+from store.db import get_connection
 
 # =========================
 # App Lifespan (Background Task)
