@@ -1,32 +1,18 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-from ultralytics import YOLO
 import cv2
 import numpy as np
-import time
 import os
+import uvicorn
 
-from detector import detect_dirty_floor
+from detector import detect
 
-MODEL_PATH = os.getenv("MODEL_PATH", "models/yolov8n.pt")
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    start = time.time()
-    print(f"[ML] Loading YOLO model from {MODEL_PATH}")
-    app.state.model = YOLO(MODEL_PATH)
-    print(f"[ML] Model loaded in {time.time() - start:.2f}s")
-    yield
-    print("[ML] Shutdown ML service")
 
 
 app = FastAPI(
     title="FloorEye ML Service",
     version="1.0",
-    lifespan=lifespan
 )
 
 app.add_middleware(
@@ -54,16 +40,15 @@ async def detect_floor(file: UploadFile = File(...)):
     if frame is None:
         raise HTTPException(400, "Invalid image")
 
-    model = app.state.model
-    results = model(frame, verbose=False)[0]
-
-    is_dirty, confidence = detect_dirty_floor(
-        results,
-        conf_threshold=CONF_THRESHOLD
-    )
+    is_dirty, confidence = detect(frame, conf_threshold=CONF_THRESHOLD)
 
     return {
         "is_dirty": is_dirty,
         "confidence": round(confidence, 3),
         "conf_threshold": CONF_THRESHOLD,
     }
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", "7860"))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
