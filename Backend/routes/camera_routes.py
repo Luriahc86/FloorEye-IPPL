@@ -1,84 +1,121 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 from store.db import get_connection
 
 router = APIRouter()
 
+
+# =========================
+# Schemas
+# =========================
 class CameraCreate(BaseModel):
     nama: str
     lokasi: Optional[str] = ""
     link: str
     aktif: Optional[bool] = True
 
+
+# =========================
+# Routes
+# =========================
 @router.get("/")
 def list_cameras():
     """List all cameras."""
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("SELECT * FROM cameras ORDER BY id DESC")
-    data = cursor.fetchall()
-    cursor.close()
-    conn.close()
-    return data
+    try:
+        conn = get_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM cameras ORDER BY id DESC")
+        data = cursor.fetchall()
+        return data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @router.post("/")
 def create_camera(payload: CameraCreate):
     """Create a new camera."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO cameras (nama, lokasi, link, aktif) VALUES (%s, %s, %s, %s)",
-        (payload.nama, payload.lokasi, payload.link, int(payload.aktif)),
-    )
-    conn.commit()
-    new_id = cursor.lastrowid
-    cursor.close()
-    conn.close()
-    return {"id": new_id, "message": "Camera created"}
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO cameras (nama, lokasi, link, aktif)
+            VALUES (%s, %s, %s, %s)
+            """,
+            (payload.nama, payload.lokasi, payload.link, int(payload.aktif)),
+        )
+        conn.commit()
+        return {
+            "id": cursor.lastrowid,
+            "message": "Camera created"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @router.delete("/{cam_id}")
 def delete_camera(cam_id: int):
     """Delete a camera."""
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM cameras WHERE id = %s", (cam_id,))
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"message": "Camera deleted"}
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM cameras WHERE id = %s", (cam_id,))
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Camera not found")
+
+        return {"message": "Camera deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
 
 @router.patch("/{cam_id}")
-def update_camera(cam_id: int, body: dict):
-    """Update camera status or fields."""
+def update_camera(cam_id: int, body: Dict[str, Any]):
+    """Update camera fields."""
     if not body:
-        raise HTTPException(400, "No fields to update")
-    
-    conn = get_connection()
-    cursor = conn.cursor()
-    
-    if "aktif" in body:
-        cursor.execute(
-            "UPDATE cameras SET aktif = %s WHERE id = %s",
-            (int(body["aktif"]), cam_id),
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    allowed_fields = {"aktif", "nama", "link", "lokasi"}
+    invalid_fields = set(body.keys()) - allowed_fields
+    if invalid_fields:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid fields: {', '.join(invalid_fields)}"
         )
-    if "nama" in body:
-        cursor.execute(
-            "UPDATE cameras SET nama = %s WHERE id = %s",
-            (body["nama"], cam_id),
-        )
-    if "link" in body:
-        cursor.execute(
-            "UPDATE cameras SET link = %s WHERE id = %s",
-            (body["link"], cam_id),
-        )
-    if "lokasi" in body:
-        cursor.execute(
-            "UPDATE cameras SET lokasi = %s WHERE id = %s",
-            (body["lokasi"], cam_id),
-        )
-    
-    conn.commit()
-    cursor.close()
-    conn.close()
-    return {"message": "Camera updated"}
+
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        for field, value in body.items():
+            cursor.execute(
+                f"UPDATE cameras SET {field} = %s WHERE id = %s",
+                (int(value) if field == "aktif" else value, cam_id),
+            )
+
+        conn.commit()
+
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Camera not found")
+
+        return {"message": "Camera updated"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
