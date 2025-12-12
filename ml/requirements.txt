@@ -1,6 +1,6 @@
-fastapi
-uvicorn
-opencv-python-headless
-numpy
-ultralytics
-python-multipart
+fastapi==0.110.0
+uvicorn==0.29.0
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+ultralytics==8.1.34
+python-multipart==0.0.9
