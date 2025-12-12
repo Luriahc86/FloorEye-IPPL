@@ -40,61 +40,71 @@ def monitor_loop(stop):
     print("[MONITOR] Started")
 
     while not stop.is_set():
-        cams = get_cameras()
-        emails = get_active_email_recipients()
+        try:
+            cams = get_cameras()
+            emails = get_active_email_recipients()
+        except Exception as e:
+            print(f"[MONITOR][ERROR] Failed fetching cameras/emails: {e}")
+            time.sleep(5)
+            continue
 
         for cam in cams:
-            cam_id = cam["id"]
-            rtsp = cam["link"]
+            try:
+                cam_id = cam["id"]
+                rtsp = cam["link"]
 
-            now = time.time()
-            if now - last_notif.get(cam_id, 0) < NOTIFY_INTERVAL:
-                continue
+                now = time.time()
+                if now - last_notif.get(cam_id, 0) < NOTIFY_INTERVAL:
+                    continue
 
-            cap = cv2.VideoCapture(rtsp)
-            ret, frame = cap.read()
-            cap.release()
+                cap = cv2.VideoCapture(rtsp)
+                ret, frame = cap.read()
+                cap.release()
 
-            if not ret:
-                continue
+                if not ret:
+                    continue
 
-            result = call_ml(frame)
-            is_dirty = result.get("is_dirty", False)
-            confidence = result.get("confidence", 0.0)
+                result = call_ml(frame)
+                is_dirty = result.get("is_dirty", False)
+                confidence = result.get("confidence", 0.0)
 
-            if not is_dirty:
-                continue
+                if not is_dirty:
+                    continue
 
-            _, jpg = cv2.imencode(".jpg", frame)
-            image_bytes = jpg.tobytes()
+                _, jpg = cv2.imencode(".jpg", frame)
+                image_bytes = jpg.tobytes()
 
-            conn = get_connection()
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO floor_events
-                (source, is_dirty, confidence, image_data, notes)
-                VALUES (%s,%s,%s,%s,%s)
-                """,
-                (
-                    f"camera_{cam_id}",
-                    1,
-                    confidence,
-                    image_bytes,
-                    f"Detected by monitor camera {cam_id}",
-                ),
-            )
-            conn.commit()
-            cursor.close()
-            conn.close()
-
-            if emails:
-                send_email(
-                    f"[FloorEye] Lantai Kotor ({cam['nama']})",
-                    f"Terdeteksi lantai kotor.\nConfidence: {confidence}",
-                    emails,
+                conn = get_connection()
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO floor_events
+                    (source, is_dirty, confidence, image_data, notes)
+                    VALUES (%s,%s,%s,%s,%s)
+                    """,
+                    (
+                        f"camera_{cam_id}",
+                        1,
+                        confidence,
+                        image_bytes,
+                        f"Detected by monitor camera {cam_id}",
+                    ),
                 )
+                conn.commit()
+                cursor.close()
+                conn.close()
 
-            last_notif[cam_id] = now
+                if emails:
+                    send_email(
+                        f"[FloorEye] Lantai Kotor ({cam['nama']})",
+                        f"Terdeteksi lantai kotor.\nConfidence: {confidence}",
+                        emails,
+                    )
+
+                last_notif[cam_id] = now
+            except Exception as e:
+                cam_id = cam.get("id", "unknown") if isinstance(cam, dict) else "unknown"
+                print(f"[MONITOR][ERROR] Camera {cam_id}: {e}")
+                continue
 
         time.sleep(5)

@@ -1,14 +1,14 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
 from pydantic import BaseModel
 import base64
-import cv2
-import numpy as np
 import os
+import requests
 import tempfile
 
 from store.db import get_connection
-from computer_vision.detector import detect_dirty_floor
 from services.email_service import send_email
+
+ML_URL = os.getenv("ML_URL", "http://ml:8000/detect")
 
 router = APIRouter()
 
@@ -24,9 +24,13 @@ class FramePayload(BaseModel):
 # =========================
 # Helpers
 # =========================
-def decode_bytes(data: bytes):
-    arr = np.frombuffer(data, np.uint8)
-    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+def call_ml(image_bytes: bytes):
+    resp = requests.post(
+        ML_URL,
+        files={"file": image_bytes},
+        timeout=30,
+    )
+    return resp.json()
 
 
 def decode_b64(b64: str):
@@ -74,9 +78,10 @@ def send_alert_email(image_bytes: bytes, confidence: float, source: str):
 async def detect_image(file: UploadFile = File(...)):
     try:
         raw = await file.read()
-        frame = decode_bytes(raw)
 
-        detected, confidence = detect_dirty_floor(frame, debug=False)
+        result = call_ml(raw)
+        detected = bool(result.get("is_dirty", False))
+        confidence = float(result.get("confidence", 0.0))
 
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
@@ -120,9 +125,10 @@ async def detect_image(file: UploadFile = File(...)):
 async def detect_frame(payload: FramePayload):
     try:
         image_bytes = decode_b64(payload.image_base64)
-        frame = decode_bytes(image_bytes)
 
-        detected, confidence = detect_dirty_floor(frame, debug=False)
+        result = call_ml(image_bytes)
+        detected = bool(result.get("is_dirty", False))
+        confidence = float(result.get("confidence", 0.0))
 
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)

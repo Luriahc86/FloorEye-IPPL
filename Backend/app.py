@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import os
 import threading
 
 # Routers
@@ -24,18 +26,25 @@ async def lifespan(app: FastAPI):
     Start background monitoring thread when app starts
     and stop it gracefully when app shuts down.
     """
-    stop_event = threading.Event()
-    monitor_thread = threading.Thread(
-        target=monitor_loop,
-        args=(stop_event,),
-        daemon=True
-    )
-    monitor_thread.start()
+    enable_monitor = os.getenv("ENABLE_MONITOR", "0").lower() in {"1", "true", "yes", "on"}
+    stop_event = None
+    monitor_thread = None
+
+    if enable_monitor:
+        stop_event = threading.Event()
+        monitor_thread = threading.Thread(
+            target=monitor_loop,
+            args=(stop_event,),
+            daemon=True
+        )
+        monitor_thread.start()
 
     yield  # app is running
 
-    stop_event.set()
-    monitor_thread.join()
+    if stop_event is not None:
+        stop_event.set()
+    if monitor_thread is not None:
+        monitor_thread.join()
 
 
 # =========================
