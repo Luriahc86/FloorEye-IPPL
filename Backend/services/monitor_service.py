@@ -9,6 +9,18 @@ from computer_vision.detector import detect_dirty_floor
 
 NOTIFY_INTERVAL = int(os.getenv("NOTIFY_INTERVAL", "60"))
 
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SAVE_DIR = os.path.join(BACKEND_DIR, "assets", "saved_images")
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+def save_frame_as_jpeg(frame, prefix: str):
+    filename = f"{prefix}_{int(time.time())}.jpg"
+    file_path = os.path.join(SAVE_DIR, filename)
+    ok = cv2.imwrite(file_path, frame)
+    if not ok:
+        raise RuntimeError("Gagal menyimpan gambar")
+    return file_path
+
 def get_cameras():
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
@@ -66,13 +78,18 @@ def monitor_loop(stop):
                     # Encode frame ke JPEG bytes untuk disimpan ke database
                     _, frame_bytes = cv2.imencode('.jpg', frame)
                     image_data = frame_bytes.tobytes()
-                    
+                    image_path = None
+                    try:
+                        image_path = save_frame_as_jpeg(frame, f"camera_{cam_id}")
+                    except Exception as e:
+                        print(f"[ERROR] Failed saving image to disk: {e}")
+
                     try:
                         conn = get_connection()
                         cursor = conn.cursor()
                         cursor.execute(
-                            "INSERT INTO floor_events (source,is_dirty,confidence,image_data,notes) VALUES (%s,%s,%s,%s,%s)",
-                            (f"camera_{cam_id}", int(detected), float(confidence), image_data, f"Detected by monitor on camera {cam_id}"),
+                            "INSERT INTO floor_events (source,is_dirty,confidence,image_data,image_path,notes) VALUES (%s,%s,%s,%s,%s,%s)",
+                            (f"camera_{cam_id}", int(detected), float(confidence), image_data, image_path, f"Detected by monitor on camera {cam_id}"),
                         )
                         conn.commit()
                         cursor.close()
