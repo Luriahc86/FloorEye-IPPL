@@ -4,12 +4,14 @@ import {
   createEmailRecipient,
   toggleEmailRecipient,
   deleteEmailRecipient,
+  type EmailRecipient,
 } from "../services/email.service";
 
 export default function NotificationsPage() {
-  const [list, setList] = useState<any[]>([]);
+  const [list, setList] = useState<EmailRecipient[]>([]);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const fetch = async () => {
     setLoading(true);
@@ -41,12 +43,15 @@ export default function NotificationsPage() {
 
   const handleToggle = async (id: number, active: boolean) => {
     try {
-      await toggleEmailRecipient(id, !active);
-      // Optimistic update: update state langsung tanpa refetch
-      setList(list.map((r) => (r.id === id ? { ...r, active: !active } : r)));
+      setTogglingId(id);
+      const updated = await toggleEmailRecipient(id, !active);
+      // Update state berdasarkan row terbaru dari backend
+      setList((prev) => prev.map((r) => (r.id === id ? updated : r)));
     } catch (e) {
       console.error("Failed to toggle:", e);
       alert("Gagal mengubah status");
+    } finally {
+      setTogglingId((current) => (current === id ? null : current));
     }
   };
 
@@ -97,15 +102,24 @@ export default function NotificationsPage() {
           >
             <div>
               <div className="font-semibold">{r.email}</div>
-              <div className="text-xs text-slate-600">
-                {r.active ? "✅ Aktif" : "❌ Non-aktif"}
+              <div className="mt-1">
+                <span
+                  className={
+                    r.active
+                      ? "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700"
+                      : "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-200 text-gray-600"
+                  }
+                >
+                  {r.active ? "Aktif" : "Non-aktif"}
+                </span>
               </div>
             </div>
 
             <div className="flex gap-2">
               <button
                 onClick={() => handleToggle(r.id, r.active)}
-                className="px-3 py-1 border rounded hover:bg-gray-100"
+                disabled={togglingId === r.id}
+                className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {r.active ? "Matikan" : "Aktifkan"}
               </button>

@@ -1,7 +1,6 @@
 import { createBrowserRouter } from "react-router-dom";
 import MainLayout from "../layouts/MainLayout";
 
-import UploadPage from "../pages/UploadPage";
 import LiveCameraPage from "../pages/LiveCameraPage";
 import HistoryPage from "../pages/HistoryPage";
 import NotificationsPage from "../pages/NotificationsPage";
@@ -12,8 +11,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <MainLayout />,
     children: [
-      { path: "", element: <UploadPage /> },
-      { path: "upload", element: <UploadPage /> },
+      { path: "", element: <LiveCameraPage /> },
       { path: "live", element: <LiveCameraPage /> },
       { path: "cameras", element: <CamerasPage /> },
       { path: "notifications", element: <NotificationsPage /> },

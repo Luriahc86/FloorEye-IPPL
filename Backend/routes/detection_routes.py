@@ -1,10 +1,8 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-import time
 import base64
 import cv2
 import numpy as np
-import os
 
 from store.db import get_connection
 from computer_vision.detector import detect_dirty_floor
@@ -26,60 +24,14 @@ def decode_b64(b64):
     return base64.b64decode(b64)
 
 def get_all_recipients():
-    """Get list of all recipient emails from database."""
+    """Get list of all *active* recipient emails from database."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT email FROM email_recipients")
+    cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
     return [r[0] for r in rows]
-
-@router.post("/image")
-async def detect_image(file: UploadFile = File(...)):
-    raw = await file.read()
-    frame = decode_bytes(raw)
-
-    detected, confidence = detect_dirty_floor(frame, debug=False)
-
-    # Save event to DB
-    conn = get_connection()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute(
-        "INSERT INTO floor_events (source,is_dirty,confidence,image_data) VALUES (%s,%s,%s,%s)",
-        ("upload", int(detected), float(confidence), raw),
-    )
-    conn.commit()
-    event_id = cursor.lastrowid
-
-    cursor.execute("SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s", (event_id,))
-    event = cursor.fetchone()
-    cursor.close()
-    conn.close()
-
-    # 🔥 Trigger email (only if dirty)
-    if detected:
-        recipients = get_all_recipients()
-        print("[DEBUG] DIRTY FLOOR DETECTED (UPLOAD), sending email to:", recipients)
-
-        send_email(
-            subject="⚠️ FloorEye Alert: Area Kotor Terdeteksi",
-            body=f"Sistem mendeteksi area kotor.\nConfidence: {confidence:.2f}",
-            to_list=recipients,
-            attachments=[f"temp_event_{event_id}.jpg"]
-        )
-
-        # Save temporary image for attachment
-        with open(f"temp_event_{event_id}.jpg", "wb") as f:
-            f.write(raw)
-
-    return {
-        "id": event["id"],
-        "is_dirty": bool(event["is_dirty"]),
-        "confidence": float(event["confidence"]),
-        "created_at": event["created_at"].isoformat() if event["created_at"] else None,
-        "source": "upload",
-    }
 
 @router.post("/frame")
 async def detect_frame(payload: FramePayload):

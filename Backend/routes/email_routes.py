@@ -9,6 +9,10 @@ class EmailRecipient(BaseModel):
     email: str
     active: bool = True
 
+
+class EmailRecipientPatch(BaseModel):
+    active: bool
+
 @router.get("/")
 def list_recipients():
     conn = get_connection()
@@ -33,19 +37,30 @@ def create_recipient(payload: EmailRecipient):
     return {"message": "Recipient added"}
 
 @router.patch("/{rid}")
-def patch_recipient(rid: int, body: dict):
-    if "active" not in body:
-        raise HTTPException(400, "Missing 'active'")
+def patch_recipient(rid: int, payload: EmailRecipientPatch):
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
     cursor.execute(
         "UPDATE email_recipients SET active=%s WHERE id=%s",
-        (body["active"], rid),
+        (payload.active, rid),
     )
+
+    if cursor.rowcount == 0:
+        cursor.close()
+        conn.close()
+        raise HTTPException(404, "Recipient not found")
+
     conn.commit()
+
+    cursor.execute("SELECT * FROM email_recipients WHERE id=%s", (rid,))
+    row = cursor.fetchone()
     cursor.close()
     conn.close()
-    return {"message": "Updated"}
+
+    if not row:
+        raise HTTPException(404, "Recipient not found")
+
+    return row
 
 @router.delete("/{rid}")
 def delete_recipient(rid: int):
