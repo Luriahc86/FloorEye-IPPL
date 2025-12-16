@@ -1,4 +1,4 @@
-"""FloorEye ML Service - Live Camera Frame Inference API"""
+"""FloorEye ML Service - Live Camera Frame Inference API (HF Stable)"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -10,20 +10,27 @@ import logging
 
 from detector import detect
 
-# Setup logging
+# -------------------------------------------------------------------
+# Logging
+# -------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s] %(levelname)s - %(message)s",
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("flooreye-ml")
 
-# Configuration
+# -------------------------------------------------------------------
+# Config
+# -------------------------------------------------------------------
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
 
+# -------------------------------------------------------------------
+# App
+# -------------------------------------------------------------------
 app = FastAPI(
     title="FloorEye ML Service - Live Camera",
-    description="Real-time YOLO inference for live camera frames (base64)",
-    version="2.0",
+    description="YOLO inference for base64 live camera frames (Hugging Face)",
+    version="2.1",
 )
 
 app.add_middleware(
@@ -33,114 +40,126 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+# -------------------------------------------------------------------
+# Models
+# -------------------------------------------------------------------
 class FrameRequest(BaseModel):
-    """Request model for live camera frame"""
-    image: str  # base64 encoded JPEG image (without data:image prefix)
+    image: str  # base64 JPEG (with or without data:image prefix)
 
 
 class Detection(BaseModel):
-    """Single detection result"""
     class_id: int
     class_name: str
     confidence: float
-    bbox: list[float]  # [x1, y1, x2, y2]
+    bbox: list[float]
 
 
 class DetectionResponse(BaseModel):
-    """Response model for detection"""
-    status: str  # "CLEAN" or "DIRTY"
+    status: str
     is_dirty: bool
     max_confidence: float
     detections: list[Detection]
 
 
+# -------------------------------------------------------------------
+# Startup
+# -------------------------------------------------------------------
+@app.on_event("startup")
+def on_startup():
+    logger.info("🚀 FloorEye ML Service started (Hugging Face)")
+    logger.info(f"CONF_THRESHOLD={CONF_THRESHOLD}")
+
+
+# -------------------------------------------------------------------
+# Routes
+# -------------------------------------------------------------------
 @app.get("/")
 def root():
-    """Root endpoint"""
     return {
         "service": "FloorEye ML Service",
-        "version": "2.0",
+        "version": "2.1",
         "mode": "live_camera_only",
-        "endpoints": ["/health", "/detect-frame"]
+        "endpoints": ["/health", "/detect-frame"],
     }
 
 
 @app.get("/health")
-def health_check():
-    """Health check endpoint"""
-    return {"status": "healthy", "service": "ml", "mode": "live_camera"}
+def health():
+    return {
+        "status": "ok",
+        "service": "ml",
+        "model_loaded": False,  # YOLO lazy-loaded
+    }
 
 
 @app.post("/detect-frame", response_model=DetectionResponse)
 async def detect_frame(request: FrameRequest):
-    """
-    Detect dirty floor from live camera frame.
-    
-    Accepts base64-encoded JPEG image from frontend camera.
-    NO file upload, NO webcam access, ONLY base64 frames.
-    
-    Args:
-        request: FrameRequest with base64 image
-    
-    Returns:
-        DetectionResponse with status and detections
-    """
     try:
-        # Decode base64 to bytes
-        # Remove data URL prefix if present
+        if not request.image:
+            raise HTTPException(status_code=400, detail="Empty image payload")
+
         image_b64 = request.image
         if "," in image_b64:
             image_b64 = image_b64.split(",", 1)[1]
-        
-        image_bytes = base64.b64decode(image_b64)
-        
-        # Decode to OpenCV image (in-memory)
+
+        try:
+            image_bytes = base64.b64decode(image_b64)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid base64 image")
+
         nparr = np.frombuffer(image_bytes, np.uint8)
         frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        
+
         if frame is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
-        
-        logger.info(f"Processing frame: shape={frame.shape}, dtype={frame.dtype}")
-        
-        # Run YOLO detection
-        is_dirty, max_confidence, detections_data = detect(
-            frame, 
+
+        logger.info(f"Frame received: shape={frame.shape}")
+
+        is_dirty, max_conf, detections_data = detect(
+            frame,
             conf_threshold=CONF_THRESHOLD,
-            return_detections=True
+            return_detections=True,
         )
-        
-        # Build response
+
         status = "DIRTY" if is_dirty else "CLEAN"
-        
+
         detections = [
             Detection(
                 class_id=d["class_id"],
                 class_name=d["class_name"],
                 confidence=round(d["confidence"], 3),
-                bbox=[round(x, 2) for x in d["bbox"]]
+                bbox=[round(x, 2) for x in d["bbox"]],
             )
             for d in detections_data
         ]
-        
-        logger.info(f"Detection result: {status}, confidence={max_confidence:.3f}, detections={len(detections)}")
-        
+
+        logger.info(
+            f"Result={status}, max_conf={max_conf:.3f}, detections={len(detections)}"
+        )
+
         return DetectionResponse(
             status=status,
             is_dirty=is_dirty,
-            max_confidence=round(max_confidence, 3),
-            detections=detections
+            max_confidence=round(max_conf, 3),
+            detections=detections,
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Detection failed: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Detection failed: {str(e)}")
+        logger.exception("Detection failed")
+        raise HTTPException(status_code=500, detail="Detection failed")
 
 
+# -------------------------------------------------------------------
+# Entrypoint (Hugging Face)
+# -------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", "7860"))  # HuggingFace uses 7860
-    uvicorn.run(app, host="0.0.0.0", port=port)
+
+    uvicorn.run(
+        app,
+        host="0.0.0.0",
+        port=7860,  # HF FIXED PORT
+        log_level="info",
+    )
