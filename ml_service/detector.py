@@ -1,4 +1,4 @@
-"""YOLO detector for dirty floor detection (CPU-only, HF/Railway safe)."""
+"""YOLO detector for dirty floor detection (CPU-only, HF stable)."""
 import os
 import threading
 import logging
@@ -24,19 +24,15 @@ def _get_model():
         if not os.path.exists(model_path):
             raise RuntimeError(f"Model not found: {model_path}")
 
-        logger.info(f"🔄 Loading YOLO model: {model_path}")
-        model = YOLO(model_path)
-        model.to("cpu")
+        logger.info(f"Loading YOLO model: {model_path}")
+        _model = YOLO(model_path)
+        _model.to("cpu")
 
-        # warmup ringan
-        try:
-            dummy = np.zeros((640, 640, 3), dtype=np.uint8)
-            model(dummy, verbose=False)
-        except Exception:
-            pass
+        # warmup
+        dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+        _model(dummy, verbose=False)
 
-        _model = model
-        logger.info("✅ YOLO ready (CPU)")
+        logger.info("YOLO ready (CPU)")
         return _model
 
 
@@ -51,27 +47,20 @@ def detect(frame, conf_threshold=0.25, return_detections=False):
         return (False, 0.0, []) if return_detections else (False, 0.0)
 
     for box in result.boxes:
-        cls_id = int(box.cls[0])
+        cls = int(box.cls[0])
         conf = float(box.conf[0])
-        label = result.names[cls_id].lower()
+        label = result.names[cls].lower()
 
-        is_dirty = conf >= conf_threshold and (
-            "dirty" in label or "kotor" in label
-        )
-
-        if is_dirty:
+        dirty = conf >= conf_threshold and ("dirty" in label or "kotor" in label)
+        if dirty:
             max_conf = max(max_conf, conf)
 
         if return_detections and conf >= conf_threshold:
             detections.append({
-                "class_id": cls_id,
-                "class_name": result.names[cls_id],
+                "class_id": cls,
+                "class_name": result.names[cls],
                 "confidence": conf,
-                "bbox": box.xyxy[0].cpu().numpy().tolist(),
+                "bbox": box.xyxy[0].tolist(),
             })
 
-    return (
-        (max_conf > 0, max_conf, detections)
-        if return_detections
-        else (max_conf > 0, max_conf)
-    )
+    return (max_conf > 0, max_conf, detections) if return_detections else (max_conf > 0, max_conf)

@@ -1,13 +1,7 @@
-"""FloorEye ML Service - Live Camera Frame Inference API"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import cv2
-import numpy as np
-import base64
-import os
-import logging
-
+import cv2, numpy as np, base64, os, logging
 from detector import detect
 
 logging.basicConfig(level=logging.INFO)
@@ -15,10 +9,7 @@ logger = logging.getLogger("flooreye-ml")
 
 CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
 
-app = FastAPI(
-    title="FloorEye ML Service",
-    version="2.1",
-)
+app = FastAPI(title="FloorEye ML Service", version="2.1")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,10 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 class FrameRequest(BaseModel):
     image: str
-
 
 class Detection(BaseModel):
     class_id: int
@@ -38,45 +27,35 @@ class Detection(BaseModel):
     confidence: float
     bbox: list[float]
 
-
 class DetectionResponse(BaseModel):
     status: str
     is_dirty: bool
     max_confidence: float
     detections: list[Detection]
 
-
 @app.get("/")
 def root():
-    return {"status": "ok", "endpoints": ["/health", "/detect-frame"]}
-
+    return {"status": "ok"}
 
 @app.get("/health")
 def health():
     return {"status": "healthy"}
-
 
 @app.post("/detect-frame", response_model=DetectionResponse)
 async def detect_frame(req: FrameRequest):
     if not req.image:
         raise HTTPException(400, "Empty image")
 
-    image_b64 = req.image.split(",", 1)[-1]
-    try:
-        img_bytes = base64.b64decode(image_b64)
-        frame = cv2.imdecode(
-            np.frombuffer(img_bytes, np.uint8),
-            cv2.IMREAD_COLOR,
-        )
-    except Exception:
-        raise HTTPException(400, "Invalid image")
+    img_b64 = req.image.split(",", 1)[-1]
+    frame = cv2.imdecode(
+        np.frombuffer(base64.b64decode(img_b64), np.uint8),
+        cv2.IMREAD_COLOR,
+    )
 
     if frame is None:
-        raise HTTPException(400, "Decode failed")
+        raise HTTPException(400, "Invalid image")
 
-    is_dirty, max_conf, dets = detect(
-        frame, CONF_THRESHOLD, return_detections=True
-    )
+    is_dirty, max_conf, dets = detect(frame, CONF_THRESHOLD, True)
 
     return DetectionResponse(
         status="DIRTY" if is_dirty else "CLEAN",
@@ -88,13 +67,11 @@ async def detect_frame(req: FrameRequest):
                 class_name=d["class_name"],
                 confidence=round(d["confidence"], 3),
                 bbox=[round(x, 2) for x in d["bbox"]],
-            )
-            for d in dets
+            ) for d in dets
         ],
     )
 
-
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 7860))
+    port = int(os.environ.get("PORT", 7860))
     uvicorn.run("main:app", host="0.0.0.0", port=port)
