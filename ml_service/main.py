@@ -1,4 +1,4 @@
-"""FloorEye ML Service - Live Camera Frame Inference API (HF Stable)"""
+"""FloorEye ML Service - Live Camera Frame Inference API (HF + Railway Stable)"""
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -29,7 +29,7 @@ CONF_THRESHOLD = float(os.getenv("CONF_THRESHOLD", "0.25"))
 # -------------------------------------------------------------------
 app = FastAPI(
     title="FloorEye ML Service - Live Camera",
-    description="YOLO inference for base64 live camera frames (Hugging Face)",
+    description="YOLO inference for base64 live camera frames",
     version="2.1",
 )
 
@@ -44,7 +44,7 @@ app.add_middleware(
 # Models
 # -------------------------------------------------------------------
 class FrameRequest(BaseModel):
-    image: str  # base64 JPEG (with or without data:image prefix)
+    image: str  # base64 JPEG
 
 
 class Detection(BaseModel):
@@ -65,8 +65,8 @@ class DetectionResponse(BaseModel):
 # Startup
 # -------------------------------------------------------------------
 @app.on_event("startup")
-def on_startup():
-    logger.info("🚀 FloorEye ML Service started (Hugging Face)")
+async def on_startup():
+    logger.info("🚀 FloorEye ML Service started")
     logger.info(f"CONF_THRESHOLD={CONF_THRESHOLD}")
 
 
@@ -98,9 +98,7 @@ async def detect_frame(request: FrameRequest):
         if not request.image:
             raise HTTPException(status_code=400, detail="Empty image payload")
 
-        image_b64 = request.image
-        if "," in image_b64:
-            image_b64 = image_b64.split(",", 1)[1]
+        image_b64 = request.image.split(",", 1)[-1]
 
         try:
             image_bytes = base64.b64decode(image_b64)
@@ -113,15 +111,11 @@ async def detect_frame(request: FrameRequest):
         if frame is None:
             raise HTTPException(status_code=400, detail="Invalid image data")
 
-        logger.info(f"Frame received: shape={frame.shape}")
-
         is_dirty, max_conf, detections_data = detect(
             frame,
             conf_threshold=CONF_THRESHOLD,
             return_detections=True,
         )
-
-        status = "DIRTY" if is_dirty else "CLEAN"
 
         detections = [
             Detection(
@@ -133,12 +127,8 @@ async def detect_frame(request: FrameRequest):
             for d in detections_data
         ]
 
-        logger.info(
-            f"Result={status}, max_conf={max_conf:.3f}, detections={len(detections)}"
-        )
-
         return DetectionResponse(
-            status=status,
+            status="DIRTY" if is_dirty else "CLEAN",
             is_dirty=is_dirty,
             max_confidence=round(max_conf, 3),
             detections=detections,
@@ -146,20 +136,21 @@ async def detect_frame(request: FrameRequest):
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Detection failed")
         raise HTTPException(status_code=500, detail="Detection failed")
 
 
 # -------------------------------------------------------------------
-# Entrypoint (Hugging Face)
+# Entrypoint (HF + Railway SAFE)
 # -------------------------------------------------------------------
 if __name__ == "__main__":
     import uvicorn
 
+    port = int(os.environ.get("PORT", 7860))  # HF = 7860, Railway = PORT
     uvicorn.run(
-        app,
+        "app:app",
         host="0.0.0.0",
-        port=7860,  # HF FIXED PORT
+        port=port,
         log_level="info",
     )
