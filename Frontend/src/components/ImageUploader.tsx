@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import { useState } from "react";
 
 interface Props {
@@ -46,4 +47,8 @@ export default function ImageUploader({ onImageSelected, onDetect, loading }: Pr
       </button>
     </div>
   );
+=======
+export default function ImageUploader() {
+  return null;
+>>>>>>> dev
 }

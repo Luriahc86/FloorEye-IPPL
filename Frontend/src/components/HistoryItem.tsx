@@ -1,21 +1,35 @@
+interface HistoryItemData {
+  id: number;
+  source: string;
+  is_dirty: boolean;
+  confidence?: number | null;
+  notes?: string | null;
+  created_at: string;
+}
+
 interface Props {
-  item: {
-    id: number;
-    source: string;
-    is_dirty: boolean;
-    confidence?: number | null;
-    notes?: string | null;
-    created_at: string;
-  };
+  item?: HistoryItemData | null;
 }
 
 export default function HistoryItem({ item }: Props) {
+  // Defensive guard: jika item tidak valid, jangan render apa pun
+  if (!item || typeof item.id !== "number") {
+    return null;
+  }
+
+  const imageUrl = `http://127.0.0.1:8000/history/${item.id}/image`;
+
   return (
     <div className="p-4 bg-white shadow rounded-lg flex gap-4">
       <img
-        src={`http://127.0.0.1:8000/image/${item.id}`}
+        src={imageUrl}
         alt="History"
         className="w-32 h-32 object-cover rounded"
+        loading="lazy"
+        onError={(e) => {
+          // Sembunyikan gambar jika backend mengembalikan 404 / error lain
+          e.currentTarget.style.visibility = "hidden";
+        }}
       />
 
       <div>

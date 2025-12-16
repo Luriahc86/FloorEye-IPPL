@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+<<<<<<< HEAD
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -38,6 +39,15 @@ async def lifespan(app: FastAPI):
             daemon=True
         )
         monitor_thread.start()
+=======
+from fastapi.middleware.cors import CORSMiddleware
+
+from routes.detection_routes import router as detect_router
+from routes.history_routes import router as history_router
+from routes.email_routes import router as email_router
+
+app = FastAPI(title="FloorEye Live Camera Backend")
+>>>>>>> dev
 
     yield  # app is running
 
@@ -66,6 +76,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+<<<<<<< HEAD
+=======
+app.include_router(detect_router, prefix="/detect", tags=["Detection"])
+
+app.include_router(history_router, prefix="/history", tags=["History"])
+
+app.include_router(email_router, prefix="/email-recipients", tags=["Email"])
+>>>>>>> dev
 
 # =========================
 # API Routers
@@ -100,16 +118,21 @@ app.include_router(
 # =========================
 @app.get("/")
 def root():
+<<<<<<< HEAD
     return {
         "service": "FloorEye Backend",
         "status": "running",
         "version": "2.1"
     }
 
+=======
+    return {"msg": "FloorEye Backend OK ", "mode": "live-camera"}
+>>>>>>> dev
 
 @app.get("/health")
-def health_check():
+def health():
     return {"status": "healthy"}
+<<<<<<< HEAD
 
 
 # =========================
@@ -144,3 +167,5 @@ def get_image_by_event_id(event_id: int):
     except Exception as e:
         print(f"[ERROR] get_image_by_event_id: {e}")
         return {"error": str(e)}
+=======
+>>>>>>> dev

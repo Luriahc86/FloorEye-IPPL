@@ -1,6 +1,7 @@
-from fastapi import APIRouter, File, UploadFile, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 import base64
+<<<<<<< HEAD
 import os
 import requests
 import tempfile
@@ -9,18 +10,31 @@ from store.db import get_connection
 from services.email_service import send_email
 
 ML_URL = os.getenv("ML_URL", "http://ml:8000/detect")
+=======
+import cv2
+import numpy as np
+import io
+
+from store.db import get_connection
+from computer_vision.detector import detect_dirty_floor
+from services.email_service import send_email
+>>>>>>> dev
 
 router = APIRouter()
 
 
+<<<<<<< HEAD
 # =========================
 # Schemas
 # =========================
+=======
+>>>>>>> dev
 class FramePayload(BaseModel):
     image_base64: str
     notes: str | None = None
 
 
+<<<<<<< HEAD
 # =========================
 # Helpers
 # =========================
@@ -34,11 +48,22 @@ def call_ml(image_bytes: bytes):
 
 
 def decode_b64(b64: str):
+=======
+def decode_b64(b64: str) -> bytes:
+>>>>>>> dev
     if "," in b64:
         b64 = b64.split(",", 1)[1]
     return base64.b64decode(b64)
 
 
+<<<<<<< HEAD
+=======
+def decode_bytes(data: bytes):
+    arr = np.frombuffer(data, np.uint8)
+    return cv2.imdecode(arr, cv2.IMREAD_COLOR)
+
+
+>>>>>>> dev
 def get_all_recipients():
     conn = get_connection()
     cursor = conn.cursor()
@@ -48,6 +73,7 @@ def get_all_recipients():
     conn.close()
     return [r[0] for r in rows]
 
+<<<<<<< HEAD
 
 def send_alert_email(image_bytes: bytes, confidence: float, source: str):
     """Send alert email with temporary image attachment."""
@@ -120,25 +146,46 @@ async def detect_image(file: UploadFile = File(...)):
         print(f"[ERROR] detect_image: {e}")
         raise HTTPException(status_code=500, detail="Detection failed")
 
+=======
+>>>>>>> dev
 
 @router.post("/frame")
 async def detect_frame(payload: FramePayload):
     try:
+        # Decode image
         image_bytes = decode_b64(payload.image_base64)
 
         result = call_ml(image_bytes)
         detected = bool(result.get("is_dirty", False))
         confidence = float(result.get("confidence", 0.0))
 
+<<<<<<< HEAD
+=======
+        # Save event (NO image_path, NO file)
+>>>>>>> dev
         conn = get_connection()
         cursor = conn.cursor(dictionary=True)
 
         cursor.execute(
             """
+<<<<<<< HEAD
             INSERT INTO floor_events (source, is_dirty, confidence, image_data, notes)
             VALUES (%s, %s, %s, %s, %s)
             """,
             ("camera", int(detected), float(confidence), image_bytes, payload.notes),
+=======
+            INSERT INTO floor_events 
+            (source, is_dirty, confidence, image_data, notes)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (
+                "camera",
+                int(detected),
+                float(confidence),
+                image_bytes,   # BLOB ONLY
+                payload.notes,
+            ),
+>>>>>>> dev
         )
         conn.commit()
         event_id = cursor.lastrowid
@@ -152,8 +199,28 @@ async def detect_frame(payload: FramePayload):
         cursor.close()
         conn.close()
 
+<<<<<<< HEAD
         if detected:
             send_alert_email(image_bytes, confidence, source="camera")
+=======
+        # 🔥 SEND EMAIL (IN-MEMORY ATTACHMENT)
+        if detected:
+            recipients = get_all_recipients()
+            print("[INFO] DIRTY FLOOR DETECTED, sending email:", recipients)
+
+            send_email(
+                subject="⚠️ FloorEye Alert: Area Kotor Terdeteksi",
+                body=f"Sistem mendeteksi area kotor.\nConfidence: {confidence:.2f}",
+                to_list=recipients,
+                attachments=[
+                    {
+                        "filename": f"event_{event_id}.jpg",
+                        "content": image_bytes,
+                        "mime": "image/jpeg",
+                    }
+                ],
+            )
+>>>>>>> dev
 
         return {
             "id": event["id"],

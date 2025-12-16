@@ -8,6 +8,7 @@ from services.email_service import send_email
 ML_URL = os.getenv("ML_URL", "http://ml:8000/detect")
 NOTIFY_INTERVAL = int(os.getenv("NOTIFY_INTERVAL", "60"))
 
+<<<<<<< HEAD
 def call_ml(frame):
     _, jpg = cv2.imencode(".jpg", frame)
     resp = requests.post(
@@ -16,6 +17,19 @@ def call_ml(frame):
         timeout=10,
     )
     return resp.json()
+=======
+BACKEND_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SAVE_DIR = os.path.join(BACKEND_DIR, "assets", "saved_images")
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+def save_frame_as_jpeg(frame, prefix: str):
+    filename = f"{prefix}_{int(time.time())}.jpg"
+    file_path = os.path.join(SAVE_DIR, filename)
+    ok = cv2.imwrite(file_path, frame)
+    if not ok:
+        raise RuntimeError("Gagal menyimpan gambar")
+    return file_path
+>>>>>>> dev
 
 def get_cameras():
     conn = get_connection()
@@ -68,8 +82,33 @@ def monitor_loop(stop):
                 is_dirty = result.get("is_dirty", False)
                 confidence = result.get("confidence", 0.0)
 
+<<<<<<< HEAD
                 if not is_dirty:
                     continue
+=======
+                if detected:
+                    # Encode frame ke JPEG bytes untuk disimpan ke database
+                    _, frame_bytes = cv2.imencode('.jpg', frame)
+                    image_data = frame_bytes.tobytes()
+                    image_path = None
+                    try:
+                        image_path = save_frame_as_jpeg(frame, f"camera_{cam_id}")
+                    except Exception as e:
+                        print(f"[ERROR] Failed saving image to disk: {e}")
+
+                    try:
+                        conn = get_connection()
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            "INSERT INTO floor_events (source,is_dirty,confidence,image_data,image_path,notes) VALUES (%s,%s,%s,%s,%s,%s)",
+                            (f"camera_{cam_id}", int(detected), float(confidence), image_data, image_path, f"Detected by monitor on camera {cam_id}"),
+                        )
+                        conn.commit()
+                        cursor.close()
+                        conn.close()
+                    except Exception as e:
+                        print(f"[ERROR] Failed insert detection to DB: {e}")
+>>>>>>> dev
 
                 _, jpg = cv2.imencode(".jpg", frame)
                 image_bytes = jpg.tobytes()
