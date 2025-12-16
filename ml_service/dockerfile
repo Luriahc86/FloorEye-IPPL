@@ -1,6 +1,5 @@
 FROM python:3.11-slim
 
-# System dependencies (minimum for OpenCV headless)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
@@ -8,23 +7,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements first (better cache)
 COPY requirements.txt .
 
-# 🔒 Install Torch CPU ONLY (FIXED VERSION)
+# 🔒 WAJIB: install torch CPU DULU
 RUN pip install --no-cache-dir \
     torch==2.2.2+cpu \
     torchvision==0.17.2+cpu \
     --extra-index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining dependencies (ultralytics WILL NOT pull CUDA now)
+# 🔒 BARU install ultralytics & lainnya
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app source
 COPY . .
 
 ENV PORT=7860
 EXPOSE 7860
 
-# ⚠️ SESUAIKAN DENGAN FILE ASLI
 CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
