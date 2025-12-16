@@ -1,5 +1,7 @@
 import { useRef, useState, useEffect } from "react";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 interface DetectionResponse {
   id: number;
   is_dirty: boolean;
@@ -88,7 +90,7 @@ export default function CameraViewer({
           setIsDetecting(true);
           const base64 = captureFrame();
 
-          const res = await fetch("http://localhost:8000/detect/frame", {
+          const res = await fetch(`${API_BASE}/detect/frame`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -124,7 +126,7 @@ export default function CameraViewer({
 
       const base64 = captureFrame();
 
-      const res = await fetch("http://localhost:8000/detect/frame", {
+      const res = await fetch(`${API_BASE}/detect/frame`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ image_base64: base64, notes: "manual-detect" }),

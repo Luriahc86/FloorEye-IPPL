@@ -3,6 +3,7 @@ import {
   listEmailRecipients,
   createEmailRecipient,
   deleteEmailRecipient,
+  toggleEmailRecipient,
   type EmailRecipient,
 } from "../services/email.service";
 
@@ -40,8 +41,6 @@ export default function NotificationsPage() {
     }
   };
 
-<<<<<<< HEAD
-=======
   const handleToggle = async (id: number, active: boolean) => {
     try {
       setTogglingId(id);
@@ -56,7 +55,6 @@ export default function NotificationsPage() {
     }
   };
 
->>>>>>> dev
   const handleDelete = async (id: number) => {
     if (!confirm("Hapus email ini?")) return;
     try {
@@ -101,18 +99,8 @@ export default function NotificationsPage() {
             key={r.id}
             className="p-3 bg-white border rounded flex items-center justify-between"
           >
-            <div>
+            <div className="flex-1">
               <div className="font-semibold">{r.email}</div>
-<<<<<<< HEAD
-            </div>
-
-            <button
-              onClick={() => handleDelete(r.id)}
-              className="px-3 py-1 border border-red-500 text-red-500 rounded hover:bg-red-50"
-            >
-              Hapus
-            </button>
-=======
               <div className="mt-1">
                 <span
                   className={
@@ -142,7 +130,6 @@ export default function NotificationsPage() {
                 Hapus
               </button>
             </div>
->>>>>>> dev
           </div>
         ))}
       </div>

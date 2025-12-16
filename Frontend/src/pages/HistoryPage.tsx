@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import HistoryItem from "../components/HistoryItem";
 
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 interface HistoryType {
   id: number;
   source: string;
@@ -24,7 +26,7 @@ export default function HistoryPage() {
         setLoading(true);
         setError(null);
 
-        const res = await axios.get("http://127.0.0.1:8000/history");
+        const res = await axios.get(`${API_BASE}/history`);
         const data = res.data as unknown;
 
         if (!Array.isArray(data)) {

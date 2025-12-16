@@ -1,3 +1,5 @@
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+
 interface HistoryItemData {
   id: number;
   source: string;
@@ -17,7 +19,7 @@ export default function HistoryItem({ item }: Props) {
     return null;
   }
 
-  const imageUrl = `http://127.0.0.1:8000/history/${item.id}/image`;
+  const imageUrl = `${API_BASE}/history/${item.id}/image`;
 
   return (
     <div className="p-4 bg-white shadow rounded-lg flex gap-4">
