@@ -22,11 +22,8 @@ DB_NAME = os.getenv("DB_NAME", "")
 ENABLE_MONITOR = os.getenv("ENABLE_MONITOR", "0").lower() in {"1", "true", "yes", "on"}
 ENABLE_DB = bool(DB_HOST and DB_USER and DB_NAME)
 
-# ML Service 
-ML_URL = os.getenv("ML_URL", "http://ml:8000/detect")
-
-# Model path (for local inference)
-MODEL_PATH = os.getenv("MODEL_PATH", "computer_vision/models/best.pt")
+# YOLO Service URL (HuggingFace ML Service)
+YOLO_SERVICE_URL = os.getenv("YOLO_SERVICE_URL", "https://your-huggingface-space.hf.space/detect-frame")
 
 # Monitoring Settings
 NOTIFY_INTERVAL = int(os.getenv("NOTIFY_INTERVAL", "60"))

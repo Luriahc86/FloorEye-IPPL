@@ -2,14 +2,12 @@
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 import base64
-import cv2
-import numpy as np
 import logging
 import os
 import requests
 import tempfile
 
-from app.utils.config import ENABLE_DB, ML_URL
+from app.utils.config import ENABLE_DB, YOLO_SERVICE_URL
 from app.store.db import get_connection
 
 logger = logging.getLogger(__name__)
@@ -37,14 +35,29 @@ def decode_b64(b64: str) -> bytes:
 
 
 def call_ml_service(image_bytes: bytes):
-    """Call ML service for detection."""
+    """
+    Call HuggingFace ML service for detection.
+    
+    Sends base64-encoded image to /detect-frame endpoint.
+    """
     try:
+        # Encode image bytes to base64
+        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Send JSON payload to ML service
         resp = requests.post(
-            ML_URL,
-            files={"file": image_bytes},
+            YOLO_SERVICE_URL,
+            json={"image": image_b64},
             timeout=30,
         )
-        return resp.json()
+        resp.raise_for_status()
+        result = resp.json()
+        
+        # Extract is_dirty and confidence (max_confidence)
+        return {
+            "is_dirty": result.get("is_dirty", False),
+            "confidence": result.get("max_confidence", 0.0)
+        }
     except Exception as e:
         logger.error(f"ML service call failed: {e}")
         raise HTTPException(status_code=500, detail=f"ML service unavailable: {e}")

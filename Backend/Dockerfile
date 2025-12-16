@@ -5,14 +5,7 @@ FROM python:3.11-slim
 # Set working directory
 WORKDIR /app
 
-# Install minimal system dependencies for OpenCV
-# Using libgl1 for Debian trixie compatibility
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 \
-    libgl1 \
-    libgomp1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# No system dependencies needed - lightweight API only
 
 # Copy requirements first for better layer caching
 COPY requirements.txt .
