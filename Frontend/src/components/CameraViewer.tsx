@@ -28,12 +28,19 @@ export default function CameraViewer({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DetectionResponse | null>(null);
   const [autoDetect, setAutoDetect] = useState<boolean>(false);
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
 
   /** 🔵 Start Camera */
-  const startCamera = async () => {
+  const startCamera = async (mode?: "user" | "environment") => {
     try {
+      const currentMode = mode || facingMode;
+      
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 1280, height: 720 },
+        video: { 
+          width: 1280, 
+          height: 720,
+          facingMode: currentMode
+        },
       });
 
       streamRef.current = stream;
@@ -41,6 +48,8 @@ export default function CameraViewer({
       await videoRef.current?.play();
 
       setIsActive(true);
+      setFacingMode(currentMode);
+      setError(null);
     } catch (err) {
       console.error("Camera error:", err);
       setError("Tidak dapat mengakses kamera.");
@@ -64,7 +73,29 @@ export default function CameraViewer({
     }
   };
 
-  /** 📸 Capture Frame */
+  /** � Switch Camera (Front/Rear) */
+  const switchCamera = async () => {
+    if (!isActive) return;
+    
+    try {
+      // Stop current stream
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+
+      // Toggle facingMode
+      const newMode = facingMode === "user" ? "environment" : "user";
+      
+      // Start camera with new mode
+      await startCamera(newMode);
+    } catch (err) {
+      console.error("Switch camera error:", err);
+      setError("Gagal mengganti kamera.");
+    }
+  };
+
+  /** �📸 Capture Frame */
   const captureFrame = () => {
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -149,7 +180,7 @@ export default function CameraViewer({
       <div className="flex gap-3 flex-wrap">
         {!isActive ? (
           <button
-            onClick={startCamera}
+            onClick={() => startCamera()}
             className="px-4 py-2 bg-blue-600 text-white rounded-lg"
           >
             Aktifkan Kamera
@@ -161,6 +192,14 @@ export default function CameraViewer({
               className="px-4 py-2 bg-red-600 text-white rounded-lg"
             >
               Matikan Kamera
+            </button>
+
+            <button
+              onClick={switchCamera}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+              title="Toggle Kamera Depan/Belakang"
+            >
+              🔄 {facingMode === "user" ? "Ke Belakang" : "Ke Depan"}
             </button>
 
             <button
