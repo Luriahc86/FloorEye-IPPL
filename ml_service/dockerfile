@@ -5,7 +5,7 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# OpenCV runtime deps (aman untuk Hugging Face)
+# OpenCV runtime deps (MINIMAL)
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libgl1 \
@@ -13,13 +13,18 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
 
-# copy SEMUA file (termasuk model .pt)
+# 🔒 INSTALL CPU TORCH DULU (ANTI CUDA)
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir \
+        torch==2.2.2+cpu \
+        torchvision==0.17.2+cpu \
+        --extra-index-url https://download.pytorch.org/whl/cpu && \
+    pip install --no-cache-dir -r requirements.txt
+
 COPY . .
 
 EXPOSE 7860
 
-# Hugging Face way
-CMD ["python", "main.py"]
+# 🔥 JALANIN UVICORN LANGSUNG
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
