@@ -7,18 +7,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# 1️⃣ COPY requirements dulu
 COPY requirements.txt .
 
-# 🔒 WAJIB: install torch CPU DULU
+# 2️⃣ INSTALL TORCH CPU ONLY (INI KUNCI)
 RUN pip install --no-cache-dir \
     torch==2.2.2+cpu \
     torchvision==0.17.2+cpu \
     --extra-index-url https://download.pytorch.org/whl/cpu
 
-# 🔒 BARU install ultralytics & lainnya
+# 3️⃣ BARU install ultralytics & lainnya
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# 4️⃣ Copy source
+COPY app.py .
+COPY detector.py .
+COPY models ./models
 
 ENV PORT=7860
 EXPOSE 7860
