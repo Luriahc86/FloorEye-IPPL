@@ -15,7 +15,7 @@ export default function Sidebar({
   };
 
   return (
-    <aside className="flex h-full w-64 flex-col bg-white border-r shadow-sm overflow-y-auto">
+    <aside className="flex h-full w-64 flex-col bg-white border-r shadow-sm overflow-y-auto" data-variant={variant}>
       {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm font-medium text-slate-700">
         <NavLink
