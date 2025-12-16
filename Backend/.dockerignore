@@ -1,0 +1,61 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+env/
+venv/
+ENV/
+.venv
+
+# Environment files
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# YOLO models (download at runtime)
+*.pt
+*.pth
+*.onnx
+models/
+weights/
+
+# Datasets and training artifacts
+datasets/
+runs/
+saved_images/
+assets/saved_images/
+
+# Logs
+*.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation
+*.md
+docs/
+
+# Frontend (not needed in backend image)
+frontend/
+Frontend/
+node_modules/
