@@ -1,30 +1,24 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# system deps minimal (HF safe)
+RUN apt-get update && apt-get install -y \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app
-
-# 1️⃣ COPY requirements dulu
 COPY requirements.txt .
-
-# 2️⃣ INSTALL TORCH CPU ONLY (INI KUNCI)
-RUN pip install --no-cache-dir \
-    torch==2.2.2+cpu \
-    torchvision==0.17.2+cpu \
-    --extra-index-url https://download.pytorch.org/whl/cpu
-
-# 3️⃣ BARU install ultralytics & lainnya
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4️⃣ Copy source
-COPY app.py .
-COPY detector.py .
-COPY models ./models
+# 🔥 COPY FILE YANG BENAR
+COPY main.py .
+COPY models ./best.pt
+COPY models ./yolov8n.pt  
 
-ENV PORT=7860
-EXPOSE 7860
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "7860"]
+# 🔥 PAKAI main.py
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "7860"]
