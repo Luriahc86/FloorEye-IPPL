@@ -11,15 +11,20 @@ export default function NotificationsPage() {
   const [list, setList] = useState<EmailRecipient[]>([]);
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [togglingId, setTogglingId] = useState<number | null>(null);
 
   const fetch = async () => {
     setLoading(true);
+    setError(null);
     try {
       const res = await listEmailRecipients();
-      setList(res || []);
+      // Ensure we always set an array
+      setList(Array.isArray(res) ? res : []);
     } catch (e) {
       console.error(e);
+      setError("Gagal memuat data. Pastikan backend sudah berjalan.");
+      setList([]);
     } finally {
       setLoading(false);
     }
@@ -87,7 +92,13 @@ export default function NotificationsPage() {
 
       {loading && <p>Memuat...</p>}
 
-      {list.length === 0 && !loading && (
+      {error && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700">
+          {error}
+        </div>
+      )}
+
+      {list.length === 0 && !loading && !error && (
         <p className="text-slate-500 text-center py-6">
           Belum ada penerima email terdaftar
         </p>

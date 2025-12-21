@@ -89,11 +89,6 @@ app.include_router(
     tags=["Email Recipients"]
 )
 
-app.include_router(
-    cameras.router,
-    prefix="/cameras",
-    tags=["Cameras"]
-)
 
 
 @app.get("/")

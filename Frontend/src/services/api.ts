@@ -1,0 +1,79 @@
+/**
+ * Centralized Axios instance for FloorEye API.
+ * 
+ * Configuration:
+ * - Uses VITE_API_BASE environment variable for baseURL
+ * - Includes request/response interceptors for error handling
+ * - No authentication layer (as per spec)
+ */
+import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from "axios";
+
+// API base URL from environment variable
+const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
+if (!API_BASE) {
+  console.warn(
+    "[api.ts] VITE_API_BASE is not set. API calls may fail. " +
+    "Set VITE_API_BASE=https://your-railway-app.up.railway.app"
+  );
+}
+
+// Create axios instance with base configuration
+const api = axios.create({
+  baseURL: API_BASE,
+  timeout: 30000, // 30 second timeout
+  headers: {
+    "Content-Type": "application/json",
+  },
+});
+
+// Request interceptor for logging (development only)
+api.interceptors.request.use(
+  (config: InternalAxiosRequestConfig) => {
+    if (import.meta.env.DEV) {
+      console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+    }
+    return config;
+  },
+  (error: AxiosError) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling
+api.interceptors.response.use(
+  (response: AxiosResponse) => response,
+  (error: AxiosError) => {
+    // Network error (no response)
+    if (!error.response) {
+      console.error("[API] Network error:", error.message);
+      return Promise.reject(new Error("Network error. Please check your connection."));
+    }
+
+    const status = error.response.status;
+    const data = error.response.data as { detail?: string; error?: string };
+    const message = data?.detail || data?.error || error.message;
+
+    // Handle common HTTP errors
+    switch (status) {
+      case 400:
+        console.error("[API] Bad request:", message);
+        break;
+      case 404:
+        console.error("[API] Not found:", message);
+        break;
+      case 500:
+        console.error("[API] Server error:", message);
+        break;
+      case 503:
+        console.error("[API] Service unavailable:", message);
+        break;
+      default:
+        console.error(`[API] Error ${status}:`, message);
+    }
+
+    return Promise.reject(error);
+  }
+);
+
+export default api;
