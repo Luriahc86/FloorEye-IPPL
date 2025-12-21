@@ -8,7 +8,7 @@ import logging
 
 from app.utils.config import ENABLE_MONITOR, ENABLE_DB
 from app.utils.logging import setup_logging
-from app.routes import health, detection, history, email_recipients, cameras
+from app.routes import health, detection, history, email_recipients
 
 # Setup logging
 setup_logging()
