@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import HistoryItem from "../components/HistoryItem";
 
-const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:8000";
+const API_BASE = import.meta.env.VITE_API_BASE || "https://flooreye-ippl-production.up.railway.app";
 
 interface HistoryType {
   id: number;

@@ -46,7 +46,7 @@ export async function fetchHistory(
  * @returns Full URL string for the image
  */
 export function getImageUrl(eventId: number): string {
-  const baseUrl = import.meta.env.VITE_API_BASE ?? "";
+  const baseUrl = import.meta.env.VITE_API_BASE || "https://flooreye-ippl-production.up.railway.app";
   return `${baseUrl}/history/${eventId}/image`;
 }
 

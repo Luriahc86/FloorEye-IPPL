@@ -3,20 +3,18 @@
  * 
  * Configuration:
  * - Uses VITE_API_BASE environment variable for baseURL
+ * - Falls back to production Railway URL if not set
  * - Includes request/response interceptors for error handling
  * - No authentication layer (as per spec)
  */
 import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from "axios";
 
-// API base URL from environment variable
-const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+// Production backend URL (Railway)
+const PRODUCTION_API = "https://flooreye-ippl-production.up.railway.app";
 
-if (!API_BASE) {
-  console.warn(
-    "[api.ts] VITE_API_BASE is not set. API calls may fail. " +
-    "Set VITE_API_BASE=https://your-railway-app.up.railway.app"
-  );
-}
+// API base URL from environment variable, fallback to production
+const API_BASE = import.meta.env.VITE_API_BASE || PRODUCTION_API;
+
 
 // Create axios instance with base configuration
 const api = axios.create({
