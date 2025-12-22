@@ -1,3 +1,4 @@
+-- Active: 1765519306496@@trolley.proxy.rlwy.net@28263@railway
 DROP TABLE IF EXISTS email_recipients;
 DROP TABLE IF EXISTS floor_events;
 CREATE TABLE IF NOT EXISTS email_recipients (
