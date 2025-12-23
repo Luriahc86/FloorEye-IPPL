@@ -1,8 +1,6 @@
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../services/api";
 import HistoryItem from "../components/HistoryItem";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "https://flooreye-ippl-production.up.railway.app";
 
 interface HistoryType {
   id: number;
@@ -26,7 +24,7 @@ export default function HistoryPage() {
         setLoading(true);
         setError(null);
 
-        const res = await axios.get(`${API_BASE}/history`);
+        const res = await api.get("/history");
         const data = res.data as unknown;
 
         if (!Array.isArray(data)) {

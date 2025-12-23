@@ -5,7 +5,7 @@
  * - GET /history?limit=&offset=
  * - GET /history/{event_id}/image
  */
-import api from "./api";
+import api, { API_BASE } from "./api";
 
 // Types matching backend HistoryItem model
 export interface HistoryItem {
@@ -46,8 +46,7 @@ export async function fetchHistory(
  * @returns Full URL string for the image
  */
 export function getImageUrl(eventId: number): string {
-  const baseUrl = import.meta.env.VITE_API_BASE || "https://flooreye-ippl-production.up.railway.app";
-  return `${baseUrl}/history/${eventId}/image`;
+  return `${API_BASE}/history/${eventId}/image`;
 }
 
 /**

@@ -4,6 +4,7 @@
  * Configuration:
  * - Uses VITE_API_BASE environment variable for baseURL
  * - Falls back to production Railway URL if not set
+ * - Enforces HTTPS to prevent Mixed Content errors
  * - Includes request/response interceptors for error handling
  * - No authentication layer (as per spec)
  */
@@ -12,8 +13,29 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosResp
 // Production backend URL (Railway)
 const PRODUCTION_API = "https://flooreye-ippl-production.up.railway.app";
 
+/**
+ * Sanitize API URL to enforce HTTPS and remove trailing slash.
+ * Prevents Mixed Content errors when deployed on HTTPS (Vercel).
+ */
+function sanitizeApiUrl(url: string): string {
+  let sanitized = url.trim();
+  
+  // Remove trailing slash
+  if (sanitized.endsWith("/")) {
+    sanitized = sanitized.slice(0, -1);
+  }
+  
+  // Enforce HTTPS (fix common misconfiguration)
+  if (sanitized.startsWith("http://") && !sanitized.includes("localhost") && !sanitized.includes("127.0.0.1")) {
+    console.warn("[API] Converting HTTP to HTTPS to prevent Mixed Content errors:", sanitized);
+    sanitized = sanitized.replace("http://", "https://");
+  }
+  
+  return sanitized;
+}
+
 // API base URL from environment variable, fallback to production
-const API_BASE = import.meta.env.VITE_API_BASE || PRODUCTION_API;
+const API_BASE = sanitizeApiUrl(import.meta.env.VITE_API_BASE || PRODUCTION_API);
 
 
 // Create axios instance with base configuration
@@ -74,4 +96,5 @@ api.interceptors.response.use(
   }
 );
 
+export { API_BASE };
 export default api;

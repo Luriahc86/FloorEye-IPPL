@@ -1,6 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-
-const API_BASE = import.meta.env.VITE_API_BASE || "https://flooreye-ippl-production.up.railway.app";
+import { API_BASE } from "../services/api";
 
 interface DetectionResponse {
   id: number;
