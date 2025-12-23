@@ -54,12 +54,22 @@ const api = axios.create({
   },
 });
 
-// Request interceptor for logging (development only)
+// Request interceptor for logging and URL debugging
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    if (import.meta.env.DEV) {
-      console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
-    }
+    // Construct full URL for debugging
+    const fullUrl = config.baseURL 
+      ? `${config.baseURL}${config.url?.startsWith('/') ? '' : '/'}${config.url}`
+      : config.url;
+    
+    // ALWAYS log the full URL to debug Mixed Content issues
+    console.log(`[API] ${config.method?.toUpperCase()} ${fullUrl}`);
+    console.log("[API] Request config:", { 
+      baseURL: config.baseURL, 
+      url: config.url,
+      fullUrl: fullUrl
+    });
+    
     return config;
   },
   (error: AxiosError) => {
