@@ -35,8 +35,15 @@ function sanitizeApiUrl(url: string): string {
 }
 
 // API base URL from environment variable, fallback to production
-const API_BASE = sanitizeApiUrl(import.meta.env.VITE_API_BASE || PRODUCTION_API);
+const rawApiBase = import.meta.env.VITE_API_BASE || PRODUCTION_API;
+const API_BASE = sanitizeApiUrl(rawApiBase);
 
+// Log the API configuration (helps debug Mixed Content issues)
+console.log("[API] Configuration:", {
+  raw: rawApiBase,
+  sanitized: API_BASE,
+  env: import.meta.env.MODE,
+});
 
 // Create axios instance with base configuration
 const api = axios.create({
