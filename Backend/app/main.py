@@ -15,6 +15,7 @@ from app.routes import (
     detection_router,
     history_router,
     email_recipients_router,
+    db_test_router,
 )
 
 # =========================
@@ -30,6 +31,15 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     stop_event = None
     monitor_thread = None
+
+    # Initialize SQLAlchemy engine on startup
+    if ENABLE_DB:
+        try:
+            from app.store.database import init_engine
+            init_engine()
+            logger.info("SQLAlchemy database engine initialized")
+        except Exception as e:
+            logger.error(f"Failed to initialize database engine: {e}")
 
     if ENABLE_MONITOR and ENABLE_DB:
         logger.info("Starting background monitor thread")
@@ -96,6 +106,11 @@ app.include_router(
     email_recipients_router,
     prefix="/email-recipients",
     tags=["Email Recipients"]
+)
+
+app.include_router(
+    db_test_router,
+    tags=["Database"]
 )
 
 # =========================
