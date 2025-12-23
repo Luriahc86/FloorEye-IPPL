@@ -21,9 +21,9 @@ COPY Procfile .
 # Expose port (Railway injects $PORT)
 EXPOSE 8000
 
-# Health check
+# Health check - Railway provides PORT at runtime
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:${PORT:-8000}/health', timeout=5)"
+    CMD ["sh", "-c", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${PORT}/health', timeout=5)\""]
 
-# Start with uvicorn, Railway provides $PORT
-CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Start with uvicorn - MUST use shell form for $PORT expansion
+CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
