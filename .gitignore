@@ -9,10 +9,10 @@ venv/
 ENV/
 .venv
 
-# Environment
+# Environment (secrets)
 .env
 .env.local
-.env.production
+# Note: .env.production is allowed to be committed (non-secret configs only)
 
 # IDE
 .vscode/
