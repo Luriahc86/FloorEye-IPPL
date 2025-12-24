@@ -1,14 +1,6 @@
-/**
- * @deprecated Use emailRecipients.service.ts instead.
- * This file is kept for backward compatibility.
- */
-export {
-  listRecipients as listEmailRecipients,
-  createRecipient as createEmailRecipient,
-  toggleRecipient as toggleEmailRecipient,
-  deleteRecipient as deleteEmailRecipient,
-  type EmailRecipient,
-} from "./emailRecipients.service";
+import api from "./api";
 
-export { default } from "./emailRecipients.service";
-
+export const sendTestEmail = async () => {
+  const res = await api.get("/email-recipients/test");
+  return res.data;
+};
