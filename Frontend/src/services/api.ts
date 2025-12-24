@@ -16,26 +16,44 @@ const PRODUCTION_API = "https://flooreye-ippl-production.up.railway.app";
 /**
  * Sanitize API URL to enforce HTTPS and remove trailing slash.
  * Prevents Mixed Content errors when deployed on HTTPS (Vercel).
+ * 
+ * CRITICAL: This function MUST ensure HTTPS for all non-localhost URLs
+ * to prevent Mixed Content blocking in production.
  */
 function sanitizeApiUrl(url: string): string {
   let sanitized = url.trim();
   
   // Remove trailing slash
-  if (sanitized.endsWith("/")) {
+  while (sanitized.endsWith("/")) {
     sanitized = sanitized.slice(0, -1);
   }
   
-  // Enforce HTTPS (fix common misconfiguration)
-  if (sanitized.startsWith("http://") && !sanitized.includes("localhost") && !sanitized.includes("127.0.0.1")) {
-    console.warn("[API] Converting HTTP to HTTPS to prevent Mixed Content errors:", sanitized);
+  // Check if running in browser on HTTPS (production)
+  const isSecureContext = typeof window !== "undefined" && window.location.protocol === "https:";
+  const isLocalhost = sanitized.includes("localhost") || sanitized.includes("127.0.0.1");
+  
+  // ALWAYS enforce HTTPS for non-localhost URLs when in secure context
+  if (sanitized.startsWith("http://") && !isLocalhost) {
+    console.warn("[API] ⚠️ Converting HTTP to HTTPS to prevent Mixed Content errors:", sanitized);
     sanitized = sanitized.replace("http://", "https://");
+  }
+  
+  // Double-check: if we're on HTTPS and URL is HTTP (non-localhost), force HTTPS
+  if (isSecureContext && !isLocalhost && !sanitized.startsWith("https://")) {
+    console.warn("[API] ⚠️ Forcing HTTPS for secure context:", sanitized);
+    sanitized = sanitized.replace(/^http:\/\//, "https://");
+    if (!sanitized.startsWith("https://")) {
+      sanitized = "https://" + sanitized.replace(/^https?:\/\//, "");
+    }
   }
   
   return sanitized;
 }
 
-// API base URL from environment variable, fallback to production
+// Get API base URL - prioritize env var, fallback to hardcoded production URL
 const rawApiBase = import.meta.env.VITE_API_BASE || PRODUCTION_API;
+
+// CRITICAL: Always sanitize to ensure HTTPS
 const API_BASE = sanitizeApiUrl(rawApiBase);
 
 // Log the API configuration (helps debug Mixed Content issues)
@@ -43,6 +61,7 @@ console.log("[API] Configuration:", {
   raw: rawApiBase,
   sanitized: API_BASE,
   env: import.meta.env.MODE,
+  isSecureContext: typeof window !== "undefined" ? window.location.protocol : "N/A",
 });
 
 // Create axios instance with base configuration

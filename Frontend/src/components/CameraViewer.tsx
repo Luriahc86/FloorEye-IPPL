@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect } from "react";
-import { API_BASE } from "../services/api";
+import api from "../services/api";
 
 interface DetectionResponse {
   id: number;
@@ -120,18 +120,14 @@ export default function CameraViewer({
           setIsDetecting(true);
           const base64 = captureFrame();
 
-          const res = await fetch(`${API_BASE}/detect/frame`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              image_base64: base64,
-              notes: "live-camera-auto",
-            }),
+          // Use axios instance with HTTPS sanitization
+          const res = await api.post<DetectionResponse>("/detect/frame", {
+            image_base64: base64,
+            notes: "live-camera-auto",
           });
 
-          const data: DetectionResponse = await res.json();
-          setResult(data);
-          onResult?.(data);
+          setResult(res.data);
+          onResult?.(res.data);
         } catch (err) {
           console.error(err);
         } finally {
@@ -156,15 +152,14 @@ export default function CameraViewer({
 
       const base64 = captureFrame();
 
-      const res = await fetch(`${API_BASE}/detect/frame`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_base64: base64, notes: "manual-detect" }),
+      // Use axios instance with HTTPS sanitization
+      const res = await api.post<DetectionResponse>("/detect/frame", {
+        image_base64: base64,
+        notes: "manual-detect",
       });
 
-      const data: DetectionResponse = await res.json();
-      setResult(data);
-      onResult?.(data);
+      setResult(res.data);
+      onResult?.(res.data);
     } catch (err) {
       console.error(err);
       setError("Gagal mengirim frame ke backend.");
