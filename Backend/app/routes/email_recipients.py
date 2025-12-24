@@ -1,5 +1,5 @@
 """Email recipient management routes."""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPSException
 from pydantic import BaseModel, EmailStr
 import logging
 
