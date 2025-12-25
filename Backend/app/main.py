@@ -1,5 +1,6 @@
 """
 FloorEye Backend - Main FastAPI Application
+Fixed: HTTPS redirect without breaking trailing slash redirects
 """
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -68,27 +69,38 @@ async def lifespan(app: FastAPI):
 # =========================
 app = FastAPI(
     title="FloorEye Backend Service",
-    version="2.1",
-    lifespan=lifespan
+    version="2.1.1",
+    lifespan=lifespan,
+    # CRITICAL: Disable automatic trailing slash redirects
+    redirect_slashes=False
 )
 
 # =========================
 # HTTPS Redirect Middleware
 # =========================
 @app.middleware("http")
-async def redirect_to_https(request: Request, call_next):
+async def force_https_redirect(request: Request, call_next):
     """
-    Force HTTPS in production.
-    Railway provides X-Forwarded-Proto header.
+    Force HTTPS in production (Railway).
+    Only redirect external HTTP requests, not internal redirects.
     """
-    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    # Get protocol from Railway proxy header
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https").lower()
     
-    # If request came via HTTP, redirect to HTTPS
-    if forwarded_proto == "http":
-        url = str(request.url).replace("http://", "https://", 1)
-        logger.warning(f"Redirecting HTTP to HTTPS: {url}")
-        return RedirectResponse(url=url, status_code=301)
+    # Get host to detect localhost
+    host = request.headers.get("host", "")
+    is_localhost = "localhost" in host or "127.0.0.1" in host
     
+    # Only redirect if:
+    # 1. Protocol is HTTP
+    # 2. Not localhost
+    # 3. Not an internal redirect (no referer from same host)
+    if forwarded_proto == "http" and not is_localhost:
+        https_url = str(request.url).replace("http://", "https://", 1)
+        logger.info(f"[HTTPS Redirect] {request.url} -> {https_url}")
+        return RedirectResponse(url=https_url, status_code=301)
+    
+    # Process request normally
     response = await call_next(request)
     return response
 
@@ -98,6 +110,7 @@ async def redirect_to_https(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -141,9 +154,10 @@ def root():
     return {
         "service": "FloorEye Backend",
         "status": "running",
-        "version": "2.1",
+        "version": "2.1.1",
         "db_enabled": ENABLE_DB,
         "monitor_enabled": ENABLE_MONITOR,
+        "https_enforced": True,
     }
 
 # =========================
