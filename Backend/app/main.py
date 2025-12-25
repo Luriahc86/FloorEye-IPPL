@@ -1,10 +1,10 @@
 """
 FloorEye Backend - Main FastAPI Application
-Fixed: HTTPS redirect without breaking trailing slash redirects
+Simple version - Let Railway handle HTTPS
 """
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response, RedirectResponse
+from fastapi.responses import Response
 from contextlib import asynccontextmanager
 import threading
 import logging
@@ -69,43 +69,12 @@ async def lifespan(app: FastAPI):
 # =========================
 app = FastAPI(
     title="FloorEye Backend Service",
-    version="2.1.1",
-    lifespan=lifespan,
-    # CRITICAL: Disable automatic trailing slash redirects
-    redirect_slashes=False
+    version="2.2.0",
+    lifespan=lifespan
 )
 
 # =========================
-# HTTPS Redirect Middleware
-# =========================
-@app.middleware("http")
-async def force_https_redirect(request: Request, call_next):
-    """
-    Force HTTPS in production (Railway).
-    Only redirect external HTTP requests, not internal redirects.
-    """
-    # Get protocol from Railway proxy header
-    forwarded_proto = request.headers.get("x-forwarded-proto", "https").lower()
-    
-    # Get host to detect localhost
-    host = request.headers.get("host", "")
-    is_localhost = "localhost" in host or "127.0.0.1" in host
-    
-    # Only redirect if:
-    # 1. Protocol is HTTP
-    # 2. Not localhost
-    # 3. Not an internal redirect (no referer from same host)
-    if forwarded_proto == "http" and not is_localhost:
-        https_url = str(request.url).replace("http://", "https://", 1)
-        logger.info(f"[HTTPS Redirect] {request.url} -> {https_url}")
-        return RedirectResponse(url=https_url, status_code=301)
-    
-    # Process request normally
-    response = await call_next(request)
-    return response
-
-# =========================
-# CORS
+# CORS - Allow HTTPS origins
 # =========================
 app.add_middleware(
     CORSMiddleware,
@@ -154,10 +123,9 @@ def root():
     return {
         "service": "FloorEye Backend",
         "status": "running",
-        "version": "2.1.1",
+        "version": "2.2.0",
         "db_enabled": ENABLE_DB,
         "monitor_enabled": ENABLE_MONITOR,
-        "https_enforced": True,
     }
 
 # =========================
