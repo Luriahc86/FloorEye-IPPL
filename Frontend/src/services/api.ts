@@ -1,21 +1,19 @@
-/**
- * Centralized Axios instance for FloorEye API.
- * 
- * PRODUCTION-SAFE CONFIGURATION:
- * - HARDCODED HTTPS URL - NO environment variable dependency
- * - This eliminates ALL possible Mixed Content issues
- */
-import axios, { type AxiosError, type InternalAxiosRequestConfig, type AxiosResponse } from "axios";
+import axios from "axios";
 
-// ============================================================
-// 🔴 HARDCODED HTTPS - DO NOT CHANGE TO HTTP
-// ============================================================
-const API_BASE = "https://flooreye-ippl-production.up.railway.app";
+// =================================================================
+// PRODUCTION SAFE: Use environment variable with fallback
+// =================================================================
+const API_BASE = import.meta.env.VITE_API_BASE || 
+                 "https://flooreye-ippl-production.up.railway.app";
 
-// Log configuration for debugging
-console.log("[API] Using hardcoded HTTPS baseURL:", API_BASE);
+console.log("[API Config] Base URL:", API_BASE);
 
-// Create axios instance
+// Verify HTTPS
+if (!API_BASE.startsWith("https://")) {
+  console.error("[API Config] ⚠️ WARNING: API_BASE is not HTTPS!");
+  console.error("[API Config] Current value:", API_BASE);
+}
+
 const api = axios.create({
   baseURL: API_BASE,
   timeout: 30000,
@@ -24,27 +22,27 @@ const api = axios.create({
   },
 });
 
-// Request interceptor - logging only, NO URL modification
+// Request interceptor
 api.interceptors.request.use(
-  (config: InternalAxiosRequestConfig) => {
+  (config) => {
     const fullUrl = `${config.baseURL}${config.url}`;
     console.log(`[API] ${config.method?.toUpperCase()} ${fullUrl}`);
     return config;
   },
-  (error: AxiosError) => Promise.reject(error)
+  (error) => Promise.reject(error)
 );
 
-// Response interceptor - error handling only
+// Response interceptor
 api.interceptors.response.use(
-  (response: AxiosResponse) => response,
-  (error: AxiosError) => {
+  (response) => response,
+  (error) => {
     if (!error.response) {
       console.error("[API] Network error:", error.message);
       return Promise.reject(new Error("Network error. Please check your connection."));
     }
 
     const status = error.response.status;
-    const data = error.response.data as { detail?: string; error?: string };
+    const data = error.response.data;
     const message = data?.detail || data?.error || error.message;
 
     console.error(`[API] Error ${status}:`, message);
