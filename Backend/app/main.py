@@ -1,9 +1,9 @@
 """
 FloorEye Backend - Main FastAPI Application
 """
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, RedirectResponse
 from contextlib import asynccontextmanager
 import threading
 import logging
@@ -71,6 +71,26 @@ app = FastAPI(
     version="2.1",
     lifespan=lifespan
 )
+
+# =========================
+# HTTPS Redirect Middleware
+# =========================
+@app.middleware("http")
+async def redirect_to_https(request: Request, call_next):
+    """
+    Force HTTPS in production.
+    Railway provides X-Forwarded-Proto header.
+    """
+    forwarded_proto = request.headers.get("x-forwarded-proto", "")
+    
+    # If request came via HTTP, redirect to HTTPS
+    if forwarded_proto == "http":
+        url = str(request.url).replace("http://", "https://", 1)
+        logger.warning(f"Redirecting HTTP to HTTPS: {url}")
+        return RedirectResponse(url=url, status_code=301)
+    
+    response = await call_next(request)
+    return response
 
 # =========================
 # CORS
