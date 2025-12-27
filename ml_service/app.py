@@ -16,41 +16,66 @@ try:
     logger.info("Loading YOLO model...")
     model = YOLO("models/best.pt")
     model.to("cpu")
-    logger.info("YOLO model loaded successfully")
+    logger.info("YOLO model loaded")
 except Exception as e:
-    logger.error(f"Failed to load YOLO model: {e}")
-    raise RuntimeError("YOLO model initialization failed")
+    logger.error(f"YOLO load failed: {e}")
+    raise RuntimeError(e)
 
 # =========================
-# Health Check
+# Health check
 # =========================
 @app.get("/")
 def root():
     return {"status": "ml_service running"}
 
 # =========================
-# Detection Endpoint
+# Detection endpoint
 # =========================
 @app.post("/detect/frame")
 async def detect_frame(file: UploadFile = File(...)):
     try:
+        # --- Read bytes ---
         image_bytes = await file.read()
+        if not image_bytes:
+            raise HTTPException(400, "Empty image")
 
-        image = cv2.imdecode(
+        # --- Decode image ---
+        img = cv2.imdecode(
             np.frombuffer(image_bytes, np.uint8),
             cv2.IMREAD_COLOR
         )
 
-        if image is None:
-            raise HTTPException(status_code=400, detail="Invalid image file")
+        if img is None:
+            raise HTTPException(400, "Invalid image data")
 
-        results = model(image)
+        h, w, _ = img.shape
+        if h < 50 or w < 50:
+            raise HTTPException(400, "Image too small")
 
-        # Return YOLO JSON result
-        return results[0].tojson()
+        # --- Resize (HF CPU friendly) ---
+        img = cv2.resize(img, (640, 640))
+
+        # --- YOLO inference ---
+        results = model(img, conf=0.25)
+
+        detections = []
+        boxes = results[0].boxes
+
+        if boxes is not None:
+            for box in boxes:
+                detections.append({
+                    "class_id": int(box.cls[0]),
+                    "confidence": float(box.conf[0]),
+                    "bbox": [float(x) for x in box.xyxy[0]]
+                })
+
+        return {
+            "detections": detections,
+            "count": len(detections)
+        }
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Detection error: {e}")
-        raise HTTPException(status_code=500, detail="Detection failed")
+        logger.exception("Detection error")
+        raise HTTPException(status_code=500, detail=str(e))
