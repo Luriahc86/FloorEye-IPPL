@@ -47,7 +47,7 @@ def _require_db():
 # =========================
 # Routes
 # =========================
-@router.get("/")
+@router.get("")
 def list_recipients():
     """List all email recipients."""
     _require_db()
@@ -72,7 +72,7 @@ def list_recipients():
             conn.close()
 
 
-@router.post("/")
+@router.post("")
 def create_recipient(payload: EmailRecipient):
     """Add new email recipient."""
     _require_db()

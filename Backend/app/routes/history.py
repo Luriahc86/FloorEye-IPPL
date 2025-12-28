@@ -39,7 +39,7 @@ def _require_db():
 # =========================
 # Routes
 # =========================
-@router.get("/", response_model=List[HistoryItem])
+@router.get("", response_model=List[HistoryItem])
 def get_history(limit: int = 50, offset: int = 0):
     """Fetch detection history."""
     _require_db()
