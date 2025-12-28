@@ -1,249 +1,78 @@
-"""Detection routes for image and frame processing."""
-from fastapi import APIRouter, HTTPException, UploadFile, File
-from pydantic import BaseModel
-import base64
-import logging
 import os
 import requests
-import tempfile
-
-from app.utils.config import ENABLE_DB, YOLO_SERVICE_URL
-from app.store.db import get_connection
+import logging
+from fastapi import APIRouter, UploadFile, File, HTTPException
 
 logger = logging.getLogger(__name__)
-
 router = APIRouter()
 
-# Try to import email service
-try:
-    from app.services.emailer import send_email
-    EMAIL_AVAILABLE = True
-except ImportError:
-    EMAIL_AVAILABLE = False
+HF_URL = os.getenv("HF_URL")
 
-
-class FramePayload(BaseModel):
-    image_base64: str
-    notes: str | None = None
-
-
-def decode_b64(b64: str) -> bytes:
-    """Decode base64 string (with or without data URL prefix)."""
-    if "," in b64:
-        b64 = b64.split(",", 1)[1]
-    return base64.b64decode(b64)
-
-
-def call_ml_service(image_bytes: bytes):
-    """
-    Call HuggingFace ML service for detection.
-    
-    Sends base64-encoded image to /detect-frame endpoint.
-    """
-    try:
-        # Encode image bytes to base64
-        image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-        
-        # Send JSON payload to ML service
-        resp = requests.post(
-            YOLO_SERVICE_URL,
-            json={"image": image_b64},
-            timeout=30,
-        )
-        resp.raise_for_status()
-        result = resp.json()
-        
-        # Extract is_dirty and confidence (max_confidence)
-        return {
-            "is_dirty": result.get("is_dirty", False),
-            "confidence": result.get("max_confidence", 0.0)
-        }
-    except Exception as e:
-        logger.error(f"ML service call failed: {e}")
-        raise HTTPException(status_code=500, detail=f"ML service unavailable: {e}")
-
-
-def get_all_recipients():
-    """Get active email recipients."""
-    if not ENABLE_DB:
-        return []
-    try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
-        rows = cursor.fetchall()
-        cursor.close()
-        conn.close()
-        return [r[0] for r in rows]
-    except Exception as e:
-        logger.error(f"Failed to get email recipients: {e}")
-        return []
-
-
-def send_alert_email(image_bytes: bytes, confidence: float, source: str):
-    """Send alert email with image attachment."""
-    if not EMAIL_AVAILABLE:
-        return
-    
-    recipients = get_all_recipients()
-    if not recipients:
-        return
-    
-    # Create temporary file for attachment
-    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-        tmp.write(image_bytes)
-        temp_path = tmp.name
-    
-    try:
-        send_email(
-            subject="⚠️ FloorEye Alert: Area Kotor Terdeteksi",
-            body=f"Sistem mendeteksi area kotor ({source}).\\nConfidence: {confidence:.2f}",
-            to_list=recipients,
-            attachments=[temp_path],
-        )
-    except Exception as e:
-        logger.error(f"Failed to send email: {e}")
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-
-
-@router.post("/image")
-async def detect_image(file: UploadFile = File(...)):
-    """
-    Detect dirty floor from uploaded image file.
-    
-    Calls ML service, stores result in DB (if enabled), sends email alert.
-    """
-    try:
-        raw = await file.read()
-        
-        # Call ML service
-        result = call_ml_service(raw)
-        detected = bool(result.get("is_dirty", False))
-        confidence = float(result.get("confidence", 0.0))
-        
-        event_id = None
-        event_data = {
-            "is_dirty": detected,
-            "confidence": confidence,
-            "source": "upload",
-        }
-        
-        # Store in DB if enabled
-        if ENABLE_DB:
-            try:
-                conn = get_connection()
-                cursor = conn.cursor(dictionary=True)
-                
-                cursor.execute(
-                    """
-                    INSERT INTO floor_events (source, is_dirty, confidence, image_data)
-                    VALUES (%s, %s, %s, %s)
-                    """,
-                    ("upload", int(detected), float(confidence), raw),
-                )
-                conn.commit()
-                event_id = cursor.lastrowid
-                
-                cursor.execute(
-                    "SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s",
-                    (event_id,),
-                )
-                event = cursor.fetchone()
-                
-                cursor.close()
-                conn.close()
-                
-                if event:
-                    event_data = {
-                        "id": event["id"],
-                        "is_dirty": bool(event["is_dirty"]),
-                        "confidence": float(event["confidence"]),
-                        "created_at": event["created_at"].isoformat() if event["created_at"] else None,
-                        "source": "upload",
-                    }
-            except Exception as e:
-                logger.error(f"Failed to store detection in DB: {e}")
-        
-        # Send email alert
-        if detected:
-            send_alert_email(raw, confidence, source="upload")
-        
-        return event_data
-    
-    except Exception as e:
-        logger.error(f"detect_image error: {e}")
-        raise HTTPException(status_code=500, detail="Detection failed")
-
-
+# =========================
+# Detection Proxy Endpoint
+# =========================
 @router.post("/frame")
-async def detect_frame(payload: FramePayload):
-    """
-    Detect dirty floor from base64-encoded frame.
-    
-    Typically used by frontend webcam capture.
-    """
+async def detect_frame(file: UploadFile = File(...)):
+    # 🔒 Validasi config
+    if not HF_URL:
+        logger.error("HF_URL not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="ML service URL not configured"
+        )
+
     try:
-        # Decode image
-        image_bytes = decode_b64(payload.image_base64)
-        
-        # Call ML service
-        result = call_ml_service(image_bytes)
-        detected = bool(result.get("is_dirty", False))
-        confidence = float(result.get("confidence", 0.0))
-        
-        event_id = None
-        event_data = {
-            "is_dirty": detected,
-            "confidence": confidence,
-            "source": "camera",
-            "notes": payload.notes,
-        }
-        
-        # Store in DB if enabled
-        if ENABLE_DB:
-            try:
-                conn = get_connection()
-                cursor = conn.cursor(dictionary=True)
-                
-                cursor.execute(
-                    """
-                    INSERT INTO floor_events (source, is_dirty, confidence, image_data, notes)
-                    VALUES (%s, %s, %s, %s, %s)
-                    """,
-                    ("camera", int(detected), float(confidence), image_bytes, payload.notes),
-                )
-                conn.commit()
-                event_id = cursor.lastrowid
-                
-                cursor.execute(
-                    "SELECT id, source, is_dirty, confidence, created_at FROM floor_events WHERE id = %s",
-                    (event_id,),
-                )
-                event = cursor.fetchone()
-                
-                cursor.close()
-                conn.close()
-                
-                if event:
-                    event_data = {
-                        "id": event["id"],
-                        "is_dirty": bool(event["is_dirty"]),
-                        "confidence": float(event["confidence"]),
-                        "created_at": event["created_at"].isoformat() if event["created_at"] else None,
-                        "source": "camera",
-                        "notes": payload.notes,
-                    }
-            except Exception as e:
-                logger.error(f"Failed to store detection in DB: {e}")
-        
-        # Send email alert
-        if detected:
-            send_alert_email(image_bytes, confidence, source="camera")
-        
-        return event_data
-    
+        # Baca file SEKALI
+        file_bytes = await file.read()
+        if not file_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="Empty image"
+            )
+
+        # Kirim ke Hugging Face
+        res = requests.post(
+            HF_URL,
+            files={"file": file_bytes},
+            timeout=60
+        )
+
+        # ⛔ HF error → teruskan apa adanya
+        if res.status_code != 200:
+            logger.error(
+                f"HF ERROR {res.status_code}: {res.text}"
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"HF ERROR {res.status_code}: {res.text}"
+            )
+
+        # ✅ Aman: return JSON HF
+        try:
+            return res.json()
+        except Exception:
+            # HF balikin non-JSON
+            return {
+                "raw": res.text
+            }
+
+    except HTTPException:
+        raise
+    except requests.exceptions.Timeout:
+        logger.exception("HF request timeout")
+        raise HTTPException(
+            status_code=504,
+            detail="ML service timeout"
+        )
+    except requests.exceptions.ConnectionError:
+        logger.exception("HF connection error")
+        raise HTTPException(
+            status_code=503,
+            detail="ML service unavailable"
+        )
     except Exception as e:
-        logger.error(f"detect_frame error: {e}")
-        raise HTTPException(status_code=500, detail="Detection failed")
+        logger.exception("Detection proxy failed")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )

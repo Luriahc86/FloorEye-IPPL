@@ -1,29 +1,63 @@
-"""
-⚠️ DEPRECATED - DO NOT USE ⚠️
+import os
+import requests
+import logging
+from fastapi import HTTPException
 
-This file has been removed as part of the Railway/HuggingFace separation.
+logger = logging.getLogger(__name__)
 
-Railway backend MUST NOT perform ML inference locally.
-All YOLO detection is handled by the HuggingFace ML service.
+HF_URL = os.getenv("HF_URL")
 
-If you see this error, you have old code trying to import from this module.
+def detect_frame_via_hf(image_bytes: bytes):
+    # Validasi config
+    if not HF_URL:
+        logger.error("HF_URL not configured")
+        raise HTTPException(
+            status_code=500,
+            detail="ML service URL not configured"
+        )
 
-SOLUTION:
-- Use call_ml_service() from app/routes/detection.py instead
-- Forward image bytes to YOLO_SERVICE_URL (HuggingFace)
-- Do NOT import YOLO or cv2 in Railway backend
+    if not image_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="Empty image"
+        )
 
-See: Backend/ARCHITECTURE.md for details
-"""
+    try:
+        res = requests.post(
+            HF_URL,
+            files={"file": image_bytes},
+            timeout=60
+        )
 
-def get_model():
-    raise RuntimeError(
-        "DEPRECATED: Local YOLO inference is not allowed in Railway backend. "
-        "Use HuggingFace ML service instead (YOLO_SERVICE_URL)."
-    )
+        if res.status_code != 200:
+            logger.error(f"HF ERROR {res.status_code}: {res.text}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"HF ERROR {res.status_code}: {res.text}"
+            )
 
-def detect_dirty_floor(*args, **kwargs):
-    raise RuntimeError(
-        "DEPRECATED: Local YOLO inference is not allowed in Railway backend. "
-        "Use call_ml_service() from app/routes/detection.py instead."
-    )
+        try:
+            return res.json()
+        except Exception:
+            return {"raw": res.text}
+
+    except requests.exceptions.Timeout:
+        logger.exception("HF request timeout")
+        raise HTTPException(
+            status_code=504,
+            detail="ML service timeout"
+        )
+    except requests.exceptions.ConnectionError:
+        logger.exception("HF connection error")
+        raise HTTPException(
+            status_code=503,
+            detail="ML service unavailable"
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("HF detection failed")
+        raise HTTPException(
+            status_code=500,
+            detail=str(e)
+        )
