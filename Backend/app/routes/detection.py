@@ -99,18 +99,35 @@ def get_active_recipients() -> list:
 # =========================
 # Helper: Send Notification
 # =========================
-def send_dirty_notification(confidence: float):
+def send_dirty_notification(confidence: float) -> dict:
     """Send email notification when dirty floor detected."""
+    result = {
+        "attempted": False,
+        "success": False,
+        "recipients": [],
+        "error": None,
+    }
+
+    logger.info(f"[EMAIL] Starting notification, EMAIL_AVAILABLE={EMAIL_AVAILABLE}")
+
     if not EMAIL_AVAILABLE:
-        return
+        result["error"] = "Email service not available"
+        logger.warning("[EMAIL] Email service not available")
+        return result
 
     recipients = get_active_recipients()
+    logger.info(f"[EMAIL] Found {len(recipients)} active recipients: {recipients}")
+
     if not recipients:
-        logger.info("No active email recipients")
-        return
+        result["error"] = "No active email recipients"
+        logger.info("[EMAIL] No active email recipients")
+        return result
+
+    result["attempted"] = True
+    result["recipients"] = recipients
 
     try:
-        send_email(
+        success = send_email(
             subject="🚨 [FloorEye] Lantai Kotor Terdeteksi!",
             body=(
                 f"FloorEye mendeteksi lantai kotor.\n\n"
@@ -120,10 +137,14 @@ def send_dirty_notification(confidence: float):
             ),
             to_list=recipients,
         )
-        logger.info(f"Notification sent to {len(recipients)} recipients")
+        result["success"] = success
+        logger.info(f"[EMAIL] Notification sent: success={success}")
 
     except Exception as e:
-        logger.error(f"Failed to send notification: {e}")
+        result["error"] = str(e)
+        logger.exception(f"[EMAIL] Failed to send notification: {e}")
+
+    return result
 
 
 # =========================
@@ -185,8 +206,10 @@ async def detect_frame(file: UploadFile = File(...)):
         )
 
         # Send notification if dirty
+        email_status = None
         if is_dirty:
-            send_dirty_notification(max_conf)
+            email_status = send_dirty_notification(max_conf)
+            logger.info(f"[DETECT] Email status: {email_status}")
 
         return {
             "id": event_id,
@@ -194,6 +217,7 @@ async def detect_frame(file: UploadFile = File(...)):
             "confidence": round(max_conf, 3),
             "count": count,
             "detections": detections,
+            "email_status": email_status,
         }
 
     except HTTPException:
