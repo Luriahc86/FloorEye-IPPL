@@ -1,11 +1,11 @@
 import { useRef, useState, useEffect } from "react";
 import api from "../services/api";
 
+/** ✅ SESUAI BACKEND */
 interface DetectionResponse {
-  id: number;
   is_dirty: boolean;
   confidence: number;
-  created_at: string;
+  count: number;
 }
 
 interface CameraViewerProps {
@@ -22,47 +22,51 @@ export default function CameraViewer({
   const streamRef = useRef<MediaStream | null>(null);
   const detectIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const [isActive, setIsActive] = useState<boolean>(false);
-  const [isDetecting, setIsDetecting] = useState<boolean>(false);
+  const [isActive, setIsActive] = useState(false);
+  const [isDetecting, setIsDetecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DetectionResponse | null>(null);
-  const [autoDetect, setAutoDetect] = useState<boolean>(false);
-  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment");
+  const [autoDetect, setAutoDetect] = useState(false);
+  const [facingMode, setFacingMode] =
+    useState<"user" | "environment">("environment");
 
-  /** 🔵 Start Camera */
+  /* =========================
+     CAMERA CONTROL
+  ========================= */
+
   const startCamera = async (mode?: "user" | "environment") => {
     try {
       const currentMode = mode || facingMode;
-      
+
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          width: 1280, 
+        video: {
+          width: 1280,
           height: 720,
-          facingMode: currentMode
+          facingMode: currentMode,
         },
       });
 
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
-      await videoRef.current?.play();
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
 
       setIsActive(true);
       setFacingMode(currentMode);
       setError(null);
     } catch (err) {
-      console.error("Camera error:", err);
+      console.error(err);
       setError("Tidak dapat mengakses kamera.");
     }
   };
 
-  /** 🔴 Stop Camera */
   const stopCamera = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
-    }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
 
     if (videoRef.current) videoRef.current.srcObject = null;
+
     setIsActive(false);
     setAutoDetect(false);
 
@@ -72,91 +76,68 @@ export default function CameraViewer({
     }
   };
 
-  /** � Switch Camera (Front/Rear) */
   const switchCamera = async () => {
     if (!isActive) return;
-    
-    try {
-      // Stop current stream
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
+
+    stopCamera();
+    const nextMode = facingMode === "user" ? "environment" : "user";
+    await startCamera(nextMode);
+  };
+
+  /* =========================
+     CAPTURE FRAME → BLOB
+  ========================= */
+
+  const captureFrame = (): Promise<Blob> => {
+    return new Promise((resolve, reject) => {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (!video || !canvas) {
+        reject("Camera not ready");
+        return;
       }
 
-      // Toggle facingMode
-      const newMode = facingMode === "user" ? "environment" : "user";
-      
-      // Start camera with new mode
-      await startCamera(newMode);
-    } catch (err) {
-      console.error("Switch camera error:", err);
-      setError("Gagal mengganti kamera.");
-    }
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        reject("Canvas error");
+        return;
+      }
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) reject("Blob error");
+          else resolve(blob);
+        },
+        "image/jpeg",
+        0.9
+      );
+    });
   };
 
-  /** �📸 Capture Frame */
-  const captureFrame = () => {
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
+  /* =========================
+     SEND FRAME TO BACKEND
+  ========================= */
 
-    if (!video || !canvas) return "";
-
-    canvas.width = 1280;
-    canvas.height = 720;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return "";
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-    return canvas.toDataURL("image/jpeg", 0.95);
-  };
-
-  /** 🟢 Auto Detect */
-  useEffect(() => {
-    if (autoDetect && isActive && !isDetecting) {
-      const runDetect = async () => {
-        try {
-          setIsDetecting(true);
-          const base64 = captureFrame();
-
-          // Use axios instance with HTTPS sanitization
-          const res = await api.post<DetectionResponse>("/detect/frame", {
-            image_base64: base64,
-            notes: "live-camera-auto",
-          });
-
-          setResult(res.data);
-          onResult?.(res.data);
-        } catch (err) {
-          console.error(err);
-        } finally {
-          setIsDetecting(false);
-        }
-      };
-
-      detectIntervalRef.current = setInterval(runDetect, autoDetectInterval);
-
-      return () => {
-        if (detectIntervalRef.current)
-          clearInterval(detectIntervalRef.current);
-      };
-    }
-  }, [autoDetect, isActive, isDetecting, autoDetectInterval, onResult]);
-
-  /** 🟡 Manual Detect */
-  const sendToDetectAPI = async () => {
+  const sendFrame = async () => {
     try {
       setIsDetecting(true);
       setError(null);
 
-      const base64 = captureFrame();
+      const blob = await captureFrame();
 
-      // Use axios instance with HTTPS sanitization
-      const res = await api.post<DetectionResponse>("/detect/frame", {
-        image_base64: base64,
-        notes: "manual-detect",
-      });
+      const formData = new FormData();
+      formData.append("file", blob, "frame.jpg"); // ⬅️ WAJIB
+
+      const res = await api.post<DetectionResponse>(
+        "/detect/frame",
+        formData
+      );
 
       setResult(res.data);
       onResult?.(res.data);
@@ -167,6 +148,30 @@ export default function CameraViewer({
       setIsDetecting(false);
     }
   };
+
+  /* =========================
+     AUTO DETECT (5 DETIK)
+  ========================= */
+
+  useEffect(() => {
+    if (!autoDetect || !isActive || isDetecting) return;
+
+    detectIntervalRef.current = setInterval(
+      sendFrame,
+      autoDetectInterval
+    );
+
+    return () => {
+      if (detectIntervalRef.current) {
+        clearInterval(detectIntervalRef.current);
+        detectIntervalRef.current = null;
+      }
+    };
+  }, [autoDetect, isActive, autoDetectInterval]);
+
+  /* =========================
+     UI
+  ========================= */
 
   return (
     <div className="space-y-4">
@@ -191,13 +196,12 @@ export default function CameraViewer({
             <button
               onClick={switchCamera}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
-              title="Toggle Kamera Depan/Belakang"
             >
-              🔄 {facingMode === "user" ? "Ke Belakang" : "Ke Depan"}
+              🔄 Ganti Kamera
             </button>
 
             <button
-              onClick={sendToDetectAPI}
+              onClick={sendFrame}
               disabled={isDetecting}
               className="px-4 py-2 bg-green-600 text-white rounded-lg disabled:opacity-50"
             >
@@ -233,9 +237,9 @@ export default function CameraViewer({
         autoPlay
         playsInline
         className="w-full h-80 rounded-lg object-cover bg-gray-200"
-      ></video>
+      />
 
-      <canvas ref={canvasRef} className="hidden"></canvas>
+      <canvas ref={canvasRef} className="hidden" />
 
       {error && <p className="text-red-600">{error}</p>}
     </div>
