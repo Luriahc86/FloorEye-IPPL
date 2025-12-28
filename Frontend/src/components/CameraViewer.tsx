@@ -1,7 +1,7 @@
 import { useRef, useState, useEffect } from "react";
-import api from "../services/api";
+import axios from "axios";
+import { API_BASE } from "../services/api";
 
-/** ✅ SESUAI BACKEND */
 interface DetectionResponse {
   is_dirty: boolean;
   confidence: number;
@@ -132,10 +132,10 @@ export default function CameraViewer({
       const blob = await captureFrame();
 
       const formData = new FormData();
-      formData.append("file", blob, "frame.jpg"); // ⬅️ WAJIB
+      formData.append("file", blob, "frame.jpg");
 
-      const res = await api.post<DetectionResponse>(
-        "/detect/frame",
+      const res = await axios.post(
+        `${API_BASE}/detect/frame`,
         formData
       );
 
