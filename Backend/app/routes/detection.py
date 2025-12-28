@@ -1,88 +1,58 @@
-import logging
-import requests
 from fastapi import APIRouter, UploadFile, File, HTTPException
-
+import requests
 from app.utils.config import YOLO_SERVICE_URL
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/detect", tags=["Detection"])
 
 
 @router.post("/frame")
 async def detect_frame(file: UploadFile = File(...)):
-
-    if not YOLO_SERVICE_URL:
-        raise HTTPException(
-            status_code=500,
-            detail="YOLO_SERVICE_URL not configured"
-        )
-
+    
     try:
-        # Read uploaded image
-        image_bytes = await file.read()
-        if not image_bytes:
-            raise HTTPException(status_code=400, detail="Empty image file")
-
-        # Send to HF ML service
-        response = requests.post(
+        res = requests.post(
             YOLO_SERVICE_URL,
             files={
                 "file": (
-                    file.filename or "frame.jpg",
-                    image_bytes,
+                    file.filename,
+                    await file.read(),
                     file.content_type or "image/jpeg",
                 )
             },
-            timeout=30,
+            timeout=60,  
         )
 
-        # Handle HF error explicitly
-        if response.status_code != 200:
-            logger.error(
-                f"HF ERROR {response.status_code}: {response.text}"
-            )
+        if res.status_code != 200:
             raise HTTPException(
-                status_code=500,
-                detail=f"HF ERROR {response.status_code}"
+                status_code=502,
+                detail=f"HF ERROR {res.status_code}: {res.text}",
             )
 
-        # Parse HF response
-        data = response.json()
-
-        detections = data.get("detections", [])
-        count = data.get("count", 0)
-
-        # Get max confidence
-        max_confidence = 0.0
-        for det in detections:
-            max_confidence = max(
-                max_confidence,
-                float(det.get("confidence", 0.0))
-            )
-
-        # Business logic
-        is_dirty = count > 0
-
-        # Final response (Frontend-compatible)
-        return {
-            "is_dirty": is_dirty,
-            "confidence": round(max_confidence, 3),
-            "count": count,
-        }
-
-    except HTTPException:
-        raise
+        data = res.json()
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Failed to reach ML service: {e}")
         raise HTTPException(
-            status_code=500,
-            detail="Failed to reach ML service"
+            status_code=503,
+            detail=f"Failed to reach ML service: {e}",
         )
 
     except Exception as e:
-        logger.exception("Detection failed")
         raise HTTPException(
             status_code=500,
-            detail="Detection failed"
+            detail=str(e),
         )
+
+    detections = data.get("detections", [])
+    count = data.get("count", 0)
+
+    max_conf = 0.0
+    for d in detections:
+        max_conf = max(max_conf, d.get("confidence", 0.0))
+
+    is_dirty = count > 0
+
+    return {
+        "is_dirty": is_dirty,
+        "confidence": round(max_conf, 3),
+        "count": count,
+        "detections": detections,
+    }
