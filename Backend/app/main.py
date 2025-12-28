@@ -70,7 +70,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="FloorEye Backend Service",
     version="2.2.0",
-    lifespan=lifespan
+    lifespan=lifespan,
+    redirect_slashes=False
 )
 
 # =========================
