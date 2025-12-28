@@ -29,10 +29,6 @@ export default function CameraViewer({
   const [facingMode, setFacingMode] =
     useState<"user" | "environment">("environment");
 
-  /* =========================
-     CAMERA CONTROL
-  ========================= */
-
   const startCamera = async (mode?: "user" | "environment") => {
     try {
       const currentMode = mode || facingMode;
@@ -83,10 +79,6 @@ export default function CameraViewer({
     await startCamera(nextMode);
   };
 
-  /* =========================
-     CAPTURE FRAME → BLOB
-  ========================= */
-
   const captureFrame = (): Promise<Blob> => {
     return new Promise((resolve, reject) => {
       const video = videoRef.current;
@@ -119,10 +111,6 @@ export default function CameraViewer({
     });
   };
 
-  /* =========================
-     SEND FRAME TO BACKEND
-  ========================= */
-
   const sendFrame = async () => {
     try {
       setIsDetecting(true);
@@ -153,10 +141,6 @@ export default function CameraViewer({
     }
   };
 
-  /* =========================
-     AUTO DETECT (5 DETIK)
-  ========================= */
-
   useEffect(() => {
     if (!autoDetect || !isActive || isDetecting) return;
 
@@ -173,13 +157,8 @@ export default function CameraViewer({
     };
   }, [autoDetect, isActive, autoDetectInterval]);
 
-  /* =========================
-     UI
-  ========================= */
-
   return (
     <div className="space-y-4">
-      {/* BUTTONS */}
       <div className="flex gap-3 flex-wrap">
         {!isActive ? (
           <button

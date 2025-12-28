@@ -8,28 +8,23 @@ export default function MainLayout() {
 
   return (
     <div className="flex h-screen w-full bg-slate-50">
-      {/* Sidebar desktop di kiri */}
       <div className="hidden md:block">
         <Sidebar />
       </div>
 
-      {/* Sidebar mobile (drawer dari kiri) */}
       {mobileSidebarOpen && (
         <div className="fixed inset-0 z-40 flex md:hidden">
-          {/* Overlay */}
           <div
             className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm"
             onClick={() => setMobileSidebarOpen(false)}
           />
 
-          {/* Panel drawer kiri */}
           <div className="relative z-50 h-full w-64 bg-white shadow-xl transform transition-transform duration-200 ease-out translate-x-0">
             <Sidebar onNavigate={() => setMobileSidebarOpen(false)} />
           </div>
         </div>
       )}
 
-      {/* Konten utama di kanan */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <Navbar onToggleSidebar={() => setMobileSidebarOpen((v) => !v)} />
 

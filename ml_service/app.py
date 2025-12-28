@@ -9,9 +9,6 @@ logger = logging.getLogger("flooreye-ml")
 
 app = FastAPI(title="FloorEye ML Service")
 
-# =========================
-# Load YOLO model (CPU only)
-# =========================
 try:
     logger.info("Loading YOLO model...")
     model = YOLO("models/best.pt")
@@ -21,25 +18,19 @@ except Exception as e:
     logger.error(f"YOLO load failed: {e}")
     raise RuntimeError(e)
 
-# =========================
-# Health check
-# =========================
+
 @app.get("/")
 def root():
     return {"status": "ml_service running"}
 
-# =========================
-# Detection endpoint
-# =========================
+
 @app.post("/detect/frame")
 async def detect_frame(file: UploadFile = File(...)):
     try:
-        # --- Read bytes ---
         image_bytes = await file.read()
         if not image_bytes:
             raise HTTPException(400, "Empty image")
 
-        # --- Decode image ---
         img = cv2.imdecode(
             np.frombuffer(image_bytes, np.uint8),
             cv2.IMREAD_COLOR
@@ -52,10 +43,8 @@ async def detect_frame(file: UploadFile = File(...)):
         if h < 50 or w < 50:
             raise HTTPException(400, "Image too small")
 
-        # --- Resize (HF CPU friendly) ---
         img = cv2.resize(img, (640, 640))
 
-        # --- YOLO inference ---
         results = model(img, conf=0.25)
 
         detections = []

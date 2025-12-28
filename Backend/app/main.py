@@ -1,7 +1,3 @@
-"""
-FloorEye Backend - Main FastAPI Application
-Simple version - Let Railway handle HTTPS
-"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
@@ -19,21 +15,15 @@ from app.routes import (
     db_test_router,
 )
 
-# =========================
-# Logging
-# =========================
 setup_logging()
 logger = logging.getLogger(__name__)
 
-# =========================
-# Lifespan
-# =========================
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     stop_event = None
     monitor_thread = None
 
-    # Initialize SQLAlchemy engine on startup
     if ENABLE_DB:
         try:
             from app.store.database import init_engine
@@ -64,9 +54,7 @@ async def lifespan(app: FastAPI):
     if monitor_thread:
         monitor_thread.join(timeout=5)
 
-# =========================
-# FastAPI App
-# =========================
+
 app = FastAPI(
     title="FloorEye Backend Service",
     version="2.2.0",
@@ -74,9 +62,6 @@ app = FastAPI(
     redirect_slashes=False
 )
 
-# =========================
-# CORS - Allow HTTPS origins
-# =========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -85,9 +70,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================
-# Routers
-# =========================
 app.include_router(
     health_router,
     tags=["Health"]
@@ -116,9 +98,7 @@ app.include_router(
     tags=["Database"]
 )
 
-# =========================
-# Root
-# =========================
+
 @app.get("/")
 def root():
     return {
@@ -129,35 +109,30 @@ def root():
         "monitor_enabled": ENABLE_MONITOR,
     }
 
-# =========================
-# Legacy Image Endpoint
-# =========================
+
 @app.get("/image/{event_id}")
 def get_image_by_event_id(event_id: int):
     if not ENABLE_DB:
         return {"error": "Database not configured"}
 
     try:
-        from app.store.db import get_connection
+        from sqlalchemy import text
+        from app.store.db import get_db_connection
 
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT image_data FROM floor_events WHERE id = %s",
-            (event_id,)
-        )
-        row = cursor.fetchone()
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("SELECT image_data FROM floor_events WHERE id = :event_id"),
+                {"event_id": event_id}
+            )
+            row = result.fetchone()
 
-        cursor.close()
-        conn.close()
+            if not row or not row[0]:
+                return {"error": "Image not found"}
 
-        if not row or not row[0]:
-            return {"error": "Image not found"}
-
-        return Response(
-            content=row[0],
-            media_type="image/jpeg"
-        )
+            return Response(
+                content=row[0],
+                media_type="image/jpeg"
+            )
 
     except Exception as e:
         logger.error(f"get_image_by_event_id error: {e}")

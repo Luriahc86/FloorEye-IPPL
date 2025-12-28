@@ -1,13 +1,9 @@
-"""
-Database test route.
-Used for health check & debugging database connectivity.
-"""
-
 from fastapi import APIRouter
 from app.store.database import test_connection
 from app.utils.config import ENABLE_DB
 
 router = APIRouter()
+
 
 @router.get("/db-test")
 def db_test():

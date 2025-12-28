@@ -6,13 +6,11 @@ export interface EmailRecipient {
   active: boolean;
 }
 
-// GET all recipients
 export const getEmailRecipients = async () => {
   const res = await api.get<EmailRecipient[]>("/email-recipients");
   return res.data;
 };
 
-// POST add recipient
 export const createEmailRecipient = async (email: string) => {
   const res = await api.post("/email-recipients", {
     email,
@@ -21,7 +19,6 @@ export const createEmailRecipient = async (email: string) => {
   return res.data;
 };
 
-// PATCH toggle active
 export const updateEmailRecipient = async (
   id: number,
   active: boolean
@@ -30,13 +27,11 @@ export const updateEmailRecipient = async (
   return res.data;
 };
 
-// DELETE recipient
 export const deleteEmailRecipient = async (id: number) => {
   const res = await api.delete(`/email-recipients/${id}`);
   return res.data;
 };
 
-// TEST email
 export const testEmailRecipients = async () => {
   const res = await api.get("/email-recipients/test");
   return res.data;

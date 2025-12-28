@@ -1,130 +1,87 @@
-"""
-Detection route - Proxy to HuggingFace ML Service.
-Features:
-- Send image to HuggingFace for detection
-- Save detection result to database
-- Send email notification if dirty floor detected
-"""
-
-from fastapi import APIRouter, UploadFile, File, HTTPException
-import requests
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+import httpx
 import logging
 from typing import Optional
 
 from app.utils.config import YOLO_SERVICE_URL, ENABLE_DB
-from app.store.db import get_connection
+from app.store.db import get_db_connection, is_db_available
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# =========================
-# Email service (optional)
-# =========================
 try:
-    from app.services.emailer import send_email
-    EMAIL_AVAILABLE = True
-except Exception:
+    from app.services.emailer import send_email, SMTP_ENABLED
+    EMAIL_AVAILABLE = SMTP_ENABLED
+    logger.info(f"Email service loaded. SMTP_ENABLED={SMTP_ENABLED}")
+except Exception as e:
     EMAIL_AVAILABLE = False
-    logger.warning("Email service not available")
+    logger.warning(f"Email service not available: {e}")
 
 
-# =========================
-# Helper: Save to Database
-# =========================
-def save_detection_to_db(
+def bg_save_detection(
     source: str,
     is_dirty: bool,
     confidence: float,
     image_data: Optional[bytes] = None,
     notes: Optional[str] = None,
-) -> Optional[int]:
-    """Save detection result to floor_events table."""
+):
     if not ENABLE_DB:
-        return None
+        return
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO floor_events (source, is_dirty, confidence, image_data, notes)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (source, int(is_dirty), confidence, image_data, notes),
-        )
-        conn.commit()
-        event_id = cursor.lastrowid
-        logger.info(f"Saved detection event id={event_id}, is_dirty={is_dirty}")
-        return event_id
+        from sqlalchemy import text
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("""
+                    INSERT INTO floor_events (source, is_dirty, confidence, image_data, notes)
+                    VALUES (:source, :is_dirty, :confidence, :image_data, :notes)
+                """),
+                {
+                    "source": source,
+                    "is_dirty": int(is_dirty),
+                    "confidence": confidence,
+                    "image_data": image_data,
+                    "notes": notes,
+                }
+            )
+            conn.commit()
+            logger.info(f"[BG] Saved detection: is_dirty={is_dirty}, conf={confidence:.2f}")
 
     except Exception as e:
-        logger.error(f"Failed to save detection: {e}")
-        return None
-
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+        logger.error(f"[BG] Failed to save detection: {e}")
 
 
-# =========================
-# Helper: Get Active Recipients
-# =========================
 def get_active_recipients() -> list:
-    """Fetch active email recipients from database."""
     if not ENABLE_DB:
         return []
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT email FROM email_recipients WHERE active = 1")
-        rows = cursor.fetchall()
-        return [r["email"] for r in rows]
+        from sqlalchemy import text
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("SELECT email FROM email_recipients WHERE active = 1")
+            )
+            rows = result.fetchall()
+            return [r[0] for r in rows]
 
     except Exception as e:
         logger.error(f"Failed to fetch recipients: {e}")
         return []
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
 
-
-# =========================
-# Helper: Send Notification
-# =========================
-def send_dirty_notification(confidence: float) -> dict:
-    """Send email notification when dirty floor detected."""
-    result = {
-        "attempted": False,
-        "success": False,
-        "recipients": [],
-        "error": None,
-    }
-
-    logger.info(f"[EMAIL] Starting notification, EMAIL_AVAILABLE={EMAIL_AVAILABLE}")
+def bg_send_notification(confidence: float):
+    logger.info(f"[BG-EMAIL] Starting notification, EMAIL_AVAILABLE={EMAIL_AVAILABLE}")
 
     if not EMAIL_AVAILABLE:
-        result["error"] = "Email service not available"
-        logger.warning("[EMAIL] Email service not available")
-        return result
+        logger.warning("[BG-EMAIL] Email service not available")
+        return
 
     recipients = get_active_recipients()
-    logger.info(f"[EMAIL] Found {len(recipients)} active recipients: {recipients}")
+    logger.info(f"[BG-EMAIL] Found {len(recipients)} active recipients: {recipients}")
 
     if not recipients:
-        result["error"] = "No active email recipients"
-        logger.info("[EMAIL] No active email recipients")
-        return result
-
-    result["attempted"] = True
-    result["recipients"] = recipients
+        logger.info("[BG-EMAIL] No active email recipients")
+        return
 
     try:
         success = send_email(
@@ -137,54 +94,37 @@ def send_dirty_notification(confidence: float) -> dict:
             ),
             to_list=recipients,
         )
-        result["success"] = success
-        logger.info(f"[EMAIL] Notification sent: success={success}")
+        logger.info(f"[BG-EMAIL] Notification sent: success={success}")
 
     except Exception as e:
-        result["error"] = str(e)
-        logger.exception(f"[EMAIL] Failed to send notification: {e}")
-
-    return result
+        logger.exception(f"[BG-EMAIL] Failed to send notification: {e}")
 
 
-# =========================
-# Main Detection Route
-# =========================
 @router.post("/frame")
-async def detect_frame(file: UploadFile = File(...)):
-    """
-    Detect floor condition from uploaded image.
-    
-    Flow:
-    1. Send image to HuggingFace ML service
-    2. Save result to database
-    3. Send email notification if dirty
-    4. Return result to frontend
-    """
+async def detect_frame(file: UploadFile = File(...), background_tasks: BackgroundTasks = None):
     try:
-        # Read image bytes
         image_bytes = await file.read()
+        logger.info(f"[DETECT] Received frame: {len(image_bytes)} bytes")
 
-        # Send to HuggingFace ML
-        res = requests.post(
-            YOLO_SERVICE_URL,
-            files={
-                "file": (
-                    file.filename or "frame.jpg",
-                    image_bytes,
-                    file.content_type or "image/jpeg",
-                )
-            },
-            timeout=60,
-        )
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            res = await client.post(
+                YOLO_SERVICE_URL,
+                files={
+                    "file": (
+                        file.filename or "frame.jpg",
+                        image_bytes,
+                        file.content_type or "image/jpeg",
+                    )
+                },
+            )
 
         if res.status_code != 200:
+            logger.error(f"[DETECT] HF returned {res.status_code}: {res.text}")
             raise HTTPException(
                 status_code=500,
                 detail=f"HF ERROR {res.status_code}: {res.text}",
             )
 
-        # Parse result
         data = res.json()
         detections = data.get("detections", [])
         count = data.get("count", 0)
@@ -195,33 +135,33 @@ async def detect_frame(file: UploadFile = File(...)):
         )
 
         is_dirty = count > 0
+        logger.info(f"[DETECT] Result: is_dirty={is_dirty}, count={count}, conf={max_conf:.2f}")
 
-        # Save to database
-        event_id = save_detection_to_db(
-            source="live-camera",
-            is_dirty=is_dirty,
-            confidence=max_conf,
-            image_data=image_bytes,
-            notes=f"Detections: {count}",
-        )
+        if background_tasks:
+            background_tasks.add_task(
+                bg_save_detection,
+                source="live-camera",
+                is_dirty=is_dirty,
+                confidence=max_conf,
+                image_data=image_bytes,
+                notes=f"Detections: {count}",
+            )
 
-        # Send notification if dirty
-        email_status = None
-        if is_dirty:
-            email_status = send_dirty_notification(max_conf)
-            logger.info(f"[DETECT] Email status: {email_status}")
+            if is_dirty:
+                background_tasks.add_task(bg_send_notification, max_conf)
 
         return {
-            "id": event_id,
             "is_dirty": is_dirty,
             "confidence": round(max_conf, 3),
             "count": count,
             "detections": detections,
-            "email_status": email_status,
         }
 
     except HTTPException:
         raise
+    except httpx.TimeoutException:
+        logger.error("[DETECT] Timeout connecting to ML service")
+        raise HTTPException(status_code=504, detail="ML service timeout")
     except Exception as e:
         logger.exception("Detection failed")
         raise HTTPException(status_code=500, detail=str(e))

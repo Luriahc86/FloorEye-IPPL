@@ -8,7 +8,6 @@ export default function LiveCameraPage() {
   const handleDetectionResult = (result: any) => {
     setDetectionResult(result);
 
-    // Jika deteksi kotor, tambah ke notifikasi
     if (result.is_dirty) {
       setNotifications((prev) =>
         [
@@ -43,7 +42,6 @@ export default function LiveCameraPage() {
         autoDetectInterval={5000}
       />
 
-      {/* Notifikasi Deteksi */}
       {notifications.length > 0 && (
         <div className="p-4 bg-yellow-50 border border-yellow-300 rounded-lg">
           <h3 className="font-bold mb-3 text-yellow-800">
@@ -63,7 +61,6 @@ export default function LiveCameraPage() {
         </div>
       )}
 
-      {/* Info Current Detection */}
       {detectionResult && (
         <div className="p-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-purple-300 rounded-lg">
           <h3 className="font-bold mb-2">ℹ️ Status Deteksi Terakhir</h3>

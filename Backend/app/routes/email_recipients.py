@@ -1,29 +1,22 @@
-"""Email recipient management routes."""
-
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, EmailStr
 import logging
 
-from app.store.db import get_connection
+from sqlalchemy import text
+from app.store.db import get_db_connection
 from app.utils.config import ENABLE_DB
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# =========================
-# Optional email service
-# =========================
 try:
-    from app.services.emailer import send_email
-    EMAIL_AVAILABLE = True
+    from app.services.emailer import send_email, SMTP_ENABLED
+    EMAIL_AVAILABLE = SMTP_ENABLED
 except Exception as e:
     logger.warning(f"Email service unavailable: {e}")
     EMAIL_AVAILABLE = False
 
 
-# =========================
-# Schemas
-# =========================
 class EmailRecipient(BaseModel):
     email: EmailStr
     active: bool = True
@@ -33,9 +26,6 @@ class EmailRecipientPatch(BaseModel):
     active: bool
 
 
-# =========================
-# Helpers
-# =========================
 def _require_db():
     if not ENABLE_DB:
         raise HTTPException(
@@ -44,101 +34,103 @@ def _require_db():
         )
 
 
-# =========================
-# Routes
-# =========================
 @router.get("")
 def list_recipients():
-    """List all email recipients."""
     _require_db()
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-        cursor.execute(
-            "SELECT * FROM email_recipients ORDER BY id DESC"
-        )
-        return cursor.fetchall()
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("SELECT id, email, active, created_at FROM email_recipients ORDER BY id DESC")
+            )
+            rows = result.fetchall()
+
+            return [
+                {
+                    "id": r[0],
+                    "email": r[1],
+                    "active": bool(r[2]),
+                    "created_at": r[3].isoformat() if r[3] else None
+                }
+                for r in rows
+            ]
 
     except Exception as e:
         logger.exception("list_recipients failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
 
 @router.post("")
 def create_recipient(payload: EmailRecipient):
-    """Add new email recipient."""
     _require_db()
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO email_recipients (email, active)
-            VALUES (%s, %s)
-            """,
-            (payload.email, int(payload.active)),
-        )
-        conn.commit()
+        with get_db_connection() as conn:
+            existing = conn.execute(
+                text("SELECT id FROM email_recipients WHERE email = :email"),
+                {"email": payload.email}
+            ).fetchone()
 
-        return {"message": "Recipient added"}
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Email already exists"
+                )
 
+            conn.execute(
+                text("""
+                    INSERT INTO email_recipients (email, active)
+                    VALUES (:email, :active)
+                """),
+                {"email": payload.email, "active": int(payload.active)}
+            )
+            conn.commit()
+
+            return {"message": "Recipient added", "email": payload.email}
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("create_recipient failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
 
 @router.patch("/{rid}")
 def patch_recipient(rid: int, payload: EmailRecipientPatch):
-    """Update recipient active status."""
     _require_db()
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
-
-        cursor.execute(
-            "UPDATE email_recipients SET active=%s WHERE id=%s",
-            (int(payload.active), rid),
-        )
-
-        if cursor.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Recipient not found"
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("UPDATE email_recipients SET active = :active WHERE id = :rid"),
+                {"active": int(payload.active), "rid": rid}
             )
 
-        conn.commit()
+            if result.rowcount == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Recipient not found"
+                )
 
-        cursor.execute(
-            "SELECT * FROM email_recipients WHERE id=%s",
-            (rid,)
-        )
-        row = cursor.fetchone()
+            conn.commit()
 
-        if not row:
-            raise HTTPException(
-                status_code=404,
-                detail="Recipient not found"
-            )
+            row = conn.execute(
+                text("SELECT id, email, active, created_at FROM email_recipients WHERE id = :rid"),
+                {"rid": rid}
+            ).fetchone()
 
-        return row
+            if not row:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Recipient not found"
+                )
+
+            return {
+                "id": row[0],
+                "email": row[1],
+                "active": bool(row[2]),
+                "created_at": row[3].isoformat() if row[3] else None
+            }
 
     except HTTPException:
         raise
@@ -146,36 +138,26 @@ def patch_recipient(rid: int, payload: EmailRecipientPatch):
         logger.exception("patch_recipient failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
 
 @router.delete("/{rid}")
 def delete_recipient(rid: int):
-    """Delete email recipient."""
     _require_db()
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor()
-
-        cursor.execute(
-            "DELETE FROM email_recipients WHERE id=%s",
-            (rid,)
-        )
-        conn.commit()
-
-        if cursor.rowcount == 0:
-            raise HTTPException(
-                status_code=404,
-                detail="Recipient not found"
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("DELETE FROM email_recipients WHERE id = :rid"),
+                {"rid": rid}
             )
+            conn.commit()
 
-        return {"message": "Deleted"}
+            if result.rowcount == 0:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Recipient not found"
+                )
+
+            return {"message": "Deleted", "id": rid}
 
     except HTTPException:
         raise
@@ -183,62 +165,52 @@ def delete_recipient(rid: int):
         logger.exception("delete_recipient failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
-
 
 @router.get("/test")
 def test_email():
-    """Send test email to all active recipients."""
     _require_db()
 
     if not EMAIL_AVAILABLE:
         raise HTTPException(
             status_code=503,
-            detail="Email service not configured"
+            detail="Email service not configured. Check SMTP_USER and SMTP_PASSWORD environment variables."
         )
 
-    conn = cursor = None
     try:
-        conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
+        with get_db_connection() as conn:
+            result = conn.execute(
+                text("SELECT email FROM email_recipients WHERE active = 1")
+            )
+            rows = result.fetchall()
 
-        cursor.execute(
-            "SELECT email FROM email_recipients WHERE active = 1"
-        )
-        rows = cursor.fetchall()
+            if not rows:
+                return {
+                    "sent": False,
+                    "message": "No active recipients"
+                }
 
-        if not rows:
-            return {
-                "sent": False,
-                "message": "No active recipients"
-            }
+            emails = [r[0] for r in rows]
 
-        emails = [r["email"] for r in rows]
-
-        ok = send_email(
-            subject="[FloorEye] Test Email",
-            body=(
-                "Ini adalah email test dari FloorEye.\n\n"
-                "Jika kamu menerima email ini, berarti "
-                "konfigurasi notifikasi email sudah berhasil."
-            ),
-            to_list=emails,
-        )
-
-        if not ok:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to send email; check server logs"
+            ok = send_email(
+                subject="[FloorEye] Test Email",
+                body=(
+                    "Ini adalah email test dari FloorEye.\n\n"
+                    "Jika kamu menerima email ini, berarti "
+                    "konfigurasi notifikasi email sudah berhasil."
+                ),
+                to_list=emails,
             )
 
-        return {
-            "sent": True,
-            "recipients": emails
-        }
+            if not ok:
+                raise HTTPException(
+                    status_code=500,
+                    detail="Failed to send email; check server logs"
+                )
+
+            return {
+                "sent": True,
+                "recipients": emails
+            }
 
     except HTTPException:
         raise
@@ -246,8 +218,11 @@ def test_email():
         logger.exception("test_email failed")
         raise HTTPException(status_code=500, detail=str(e))
 
-    finally:
-        if cursor:
-            cursor.close()
-        if conn:
-            conn.close()
+
+@router.get("/status")
+def email_status():
+    return {
+        "email_available": EMAIL_AVAILABLE,
+        "smtp_configured": EMAIL_AVAILABLE,
+        "message": "Email service is ready" if EMAIL_AVAILABLE else "SMTP not configured - check SMTP_USER and SMTP_PASSWORD"
+    }

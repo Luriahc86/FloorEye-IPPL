@@ -7,8 +7,8 @@ logger = logging.getLogger(__name__)
 
 HF_URL = os.getenv("HF_URL")
 
+
 def detect_frame_via_hf(image_bytes: bytes):
-    # Validasi config
     if not HF_URL:
         logger.error("HF_URL not configured")
         raise HTTPException(

@@ -8,9 +8,7 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
   return (
     <header className="sticky top-0 z-30 border-b bg-white/80 backdrop-blur-sm">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-        {/* Kiri: hamburger (mobile) + logo */}
         <div className="flex items-center gap-3">
-          {/* Hamburger: hanya tampil di mobile */}
           {onToggleSidebar && (
             <button
               type="button"
@@ -26,7 +24,6 @@ export default function Navbar({ onToggleSidebar }: NavbarProps) {
             </button>
           )}
 
-          {/* Logo */}
           <img
             src={logo}
             alt="FloorEye"

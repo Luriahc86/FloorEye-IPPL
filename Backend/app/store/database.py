@@ -1,8 +1,3 @@
-"""
-SQLAlchemy database configuration for FloorEye Backend.
-Safe for Railway deployment.
-"""
-
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from typing import Generator

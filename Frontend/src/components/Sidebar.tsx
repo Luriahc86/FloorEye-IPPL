@@ -2,7 +2,6 @@ import { NavLink } from "react-router-dom";
 
 interface SidebarProps {
   variant?: "desktop" | "mobile";
-  /** Dipanggil saat user memilih menu (untuk nutup drawer mobile) */
   onNavigate?: () => void;
 }
 
@@ -16,7 +15,6 @@ export default function Sidebar({
 
   return (
     <aside className="flex h-full w-64 flex-col bg-white border-r shadow-sm overflow-y-auto" data-variant={variant}>
-      {/* Navigation */}
       <nav className="flex-1 px-3 py-4 space-y-1 text-sm font-medium text-slate-700">
         <NavLink
           to="/live"

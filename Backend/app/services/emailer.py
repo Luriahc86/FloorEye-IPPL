@@ -1,8 +1,3 @@
-"""
-Email service for FloorEye notifications.
-Handles SMTP with STARTTLS + SSL fallback.
-"""
-
 import os
 import ssl
 import smtplib
@@ -12,9 +7,6 @@ from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-# =========================
-# Environment config
-# =========================
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 SMTP_USER = os.getenv("SMTP_USER")
@@ -23,26 +15,21 @@ SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL") or SMTP_USER
 
 SMTP_ENABLED = bool(SMTP_USER and SMTP_PASSWORD)
 
+logger.info(f"[EMAILER] SMTP_HOST={SMTP_HOST}, SMTP_PORT={SMTP_PORT}")
+logger.info(f"[EMAILER] SMTP_USER={'SET' if SMTP_USER else 'NOT SET'}")
+logger.info(f"[EMAILER] SMTP_PASSWORD={'SET' if SMTP_PASSWORD else 'NOT SET'}")
+logger.info(f"[EMAILER] SMTP_ENABLED={SMTP_ENABLED}")
+
 if not SMTP_ENABLED:
-    logger.warning("SMTP not configured; email sending disabled")
+    logger.warning("[EMAILER] SMTP not configured - email sending disabled")
 
 
-# =========================
-# Public API
-# =========================
 def send_email(
     subject: str,
     body: str,
     to_list: List[str],
     attachments: Optional[List[str]] = None,
 ) -> bool:
-    """
-    Send email with optional attachments.
-
-    Returns:
-        True if sent successfully, False otherwise
-    """
-
     if not SMTP_ENABLED:
         logger.error("SMTP credentials missing")
         return False
@@ -61,7 +48,6 @@ def send_email(
 
         context = ssl.create_default_context()
 
-        # Try STARTTLS first (587)
         try:
             _send_via_starttls(msg, context)
             logger.info("Email sent successfully via STARTTLS")
@@ -70,7 +56,6 @@ def send_email(
         except Exception as e:
             logger.warning(f"STARTTLS failed: {e}, trying SMTP_SSL")
 
-            # Fallback to SSL (465)
             _send_via_ssl(msg, context)
             logger.info("Email sent successfully via SMTP_SSL")
             return True
@@ -80,9 +65,6 @@ def send_email(
         return False
 
 
-# =========================
-# Internal helpers
-# =========================
 def _build_message(
     subject: str,
     body: str,
