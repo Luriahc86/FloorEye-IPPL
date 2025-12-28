@@ -26,7 +26,7 @@ async def detect_frame(file: UploadFile = File(...)):
         res = requests.post(
             YOLO_SERVICE_URL,
             json={
-                "image": image_b64
+                "image_base64": image_b64
             },
             timeout=60,
         )
