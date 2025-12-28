@@ -135,7 +135,12 @@ export default function CameraViewer({
 
       const res = await api.post(
         "/detect/frame",
-        formData
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+        }
       );
 
       setResult(res.data);
