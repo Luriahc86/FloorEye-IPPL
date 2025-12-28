@@ -1,4 +1,5 @@
 import requests
+import base64
 from fastapi import APIRouter, UploadFile, File, HTTPException
 import logging
 
@@ -17,15 +18,15 @@ async def detect_frame(file: UploadFile = File(...)):
         )
 
     try:
-        # Forward file ke HuggingFace (multipart)
+        # Read image & encode to base64
+        image_bytes = await file.read()
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        # Send JSON to HF (NOT multipart)
         res = requests.post(
             YOLO_SERVICE_URL,
-            files={
-                "file": (
-                    file.filename,
-                    await file.read(),
-                    file.content_type or "image/jpeg",
-                )
+            json={
+                "image": image_b64
             },
             timeout=60,
         )
