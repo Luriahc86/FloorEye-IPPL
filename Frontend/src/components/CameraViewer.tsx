@@ -128,14 +128,32 @@ export default function CameraViewer({
           headers: {
             "Content-Type": "multipart/form-data",
           },
+          timeout: 120000,
         }
       );
 
       setResult(res.data);
       onResult?.(res.data);
-    } catch (err) {
-      console.error(err);
-      setError("Gagal mengirim frame ke backend.");
+    } catch (err: unknown) {
+      console.error("[CameraViewer] Detection error:", err);
+      
+      let errorMsg = "Gagal mengirim frame ke backend.";
+      
+      if (err && typeof err === "object" && "code" in err) {
+        const axiosErr = err as { code?: string; message?: string; response?: { status?: number; data?: { detail?: string } } };
+        
+        if (axiosErr.code === "ECONNABORTED" || axiosErr.code === "ERR_NETWORK") {
+          errorMsg = "Timeout: Server ML sedang loading, coba lagi dalam 30 detik.";
+        } else if (axiosErr.response?.status === 504) {
+          errorMsg = "ML Service timeout. Coba lagi dalam beberapa saat.";
+        } else if (axiosErr.response?.status === 500) {
+          errorMsg = axiosErr.response?.data?.detail || "Server error.";
+        } else if (axiosErr.message) {
+          errorMsg = axiosErr.message;
+        }
+      }
+      
+      setError(errorMsg);
     } finally {
       setIsDetecting(false);
     }
