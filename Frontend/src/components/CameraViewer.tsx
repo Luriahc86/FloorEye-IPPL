@@ -14,7 +14,7 @@ interface CameraViewerProps {
 
 export default function CameraViewer({
   onResult,
-  autoDetectInterval = 60000,
+  autoDetectInterval = 10000,
 }: CameraViewerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
