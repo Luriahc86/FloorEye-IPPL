@@ -409,7 +409,7 @@ DB_NAME=flooreye
 
 # Email (optional)
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
+SMTP_PORT=PORT
 SMTP_USER=
 SMTP_PASSWORD=
 SMTP_FROM_EMAIL=
@@ -810,7 +810,7 @@ CONF_THRESHOLD=0.25
 
 # Email (Optional)
 SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
+SMTP_PORT=PORT
 SMTP_USER=your-email@gmail.com
 SMTP_PASSWORD=your-app-password
 SMTP_FROM_EMAIL=your-email@gmail.com
