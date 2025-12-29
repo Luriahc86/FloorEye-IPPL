@@ -69,7 +69,7 @@ def get_active_recipients() -> list:
         return []
 
 
-def bg_send_notification(confidence: float):
+def bg_send_notification(confidence: float, image_data: bytes = None):
     logger.info(f"[BG-EMAIL] Starting notification, EMAIL_AVAILABLE={EMAIL_AVAILABLE}")
 
     if not EMAIL_AVAILABLE:
@@ -89,15 +89,19 @@ def bg_send_notification(confidence: float):
             body=(
                 f"FloorEye mendeteksi lantai kotor.\n\n"
                 f"Confidence: {confidence * 100:.1f}%\n\n"
+                f"Lihat gambar terlampir untuk detail.\n\n"
                 f"Segera lakukan pembersihan.\n\n"
                 f"- FloorEye System"
             ),
             to_list=recipients,
+            image_data=image_data,
+            image_filename="lantai_kotor.jpg",
         )
         logger.info(f"[BG-EMAIL] Notification sent: success={success}")
 
     except Exception as e:
         logger.exception(f"[BG-EMAIL] Failed to send notification: {e}")
+
 
 
 @router.post("/frame")
@@ -148,7 +152,7 @@ async def detect_frame(file: UploadFile = File(...), background_tasks: Backgroun
             )
 
             if is_dirty:
-                background_tasks.add_task(bg_send_notification, max_conf)
+                background_tasks.add_task(bg_send_notification, max_conf, image_bytes)
 
         return {
             "is_dirty": is_dirty,

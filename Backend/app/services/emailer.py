@@ -1,5 +1,6 @@
 import os
 import logging
+import base64
 import requests
 from typing import List, Optional
 
@@ -22,7 +23,8 @@ def send_email(
     subject: str,
     body: str,
     to_list: List[str],
-    attachments: Optional[List[str]] = None,
+    image_data: Optional[bytes] = None,
+    image_filename: str = "detection.jpg",
 ) -> bool:
     if not SMTP_ENABLED:
         logger.error("[EMAIL] Resend API key missing")
@@ -42,24 +44,18 @@ def send_email(
             "text": body,
         }
 
-        if attachments:
-            attachment_list = []
-            for filepath in attachments:
-                try:
-                    with open(filepath, "rb") as f:
-                        import base64
-                        content = base64.b64encode(f.read()).decode("utf-8")
-                        filename = os.path.basename(filepath)
-                        attachment_list.append({
-                            "filename": filename,
-                            "content": content,
-                        })
-                        logger.info(f"[EMAIL] Attached file: {filename}")
-                except Exception as e:
-                    logger.warning(f"[EMAIL] Failed to attach file {filepath}: {e}")
-
-            if attachment_list:
-                payload["attachments"] = attachment_list
+        if image_data:
+            try:
+                content_b64 = base64.b64encode(image_data).decode("utf-8")
+                payload["attachments"] = [
+                    {
+                        "filename": image_filename,
+                        "content": content_b64,
+                    }
+                ]
+                logger.info(f"[EMAIL] Attached image: {image_filename} ({len(image_data)} bytes)")
+            except Exception as e:
+                logger.warning(f"[EMAIL] Failed to attach image: {e}")
 
         response = requests.post(
             "https://api.resend.com/emails",
