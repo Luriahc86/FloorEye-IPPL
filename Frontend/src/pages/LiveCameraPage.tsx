@@ -27,11 +27,11 @@ export default function LiveCameraPage() {
 
   return (
     <div className="p-6 space-y-5">
-      <h1 className="text-3xl font-bold">📹 Live Camera - Deteksi Real-time</h1>
+      <h1 className="text-3xl font-bold"> Live Camera - Deteksi Real-time</h1>
 
       <div className="bg-blue-50 border border-blue-300 p-4 rounded-lg">
         <p className="text-sm text-blue-800">
-          💡 <strong>Fitur Baru:</strong> Klik tombol "▶️ Auto-Deteksi" untuk
+          <strong>Fitur Baru:</strong> Klik tombol "Auto-Deteksi" untuk
           menjalankan deteksi otomatis setiap 60 detik. Sistem akan secara
           otomatis memeriksa apakah lantai bersih atau kotor.
         </p>

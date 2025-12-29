@@ -198,7 +198,7 @@ export default function CameraViewer({
               onClick={switchCamera}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
             >
-              🔄 Ganti Kamera
+              Ganti Kamera
             </button>
 
             <button
@@ -215,7 +215,7 @@ export default function CameraViewer({
                 autoDetect ? "bg-orange-600" : "bg-purple-600"
               }`}
             >
-              {autoDetect ? "⛔ Stop Auto" : "▶️ Auto-Deteksi"}
+              {autoDetect ? "Stop Auto" : "Auto-Deteksi"}
             </button>
           </>
         )}
