@@ -39,7 +39,7 @@ export default function LiveCameraPage() {
 
       <CameraViewer
         onResult={handleDetectionResult}
-        autoDetectInterval={60000}
+        autoDetectInterval={10000}
       />
 
       {notifications.length > 0 && (
