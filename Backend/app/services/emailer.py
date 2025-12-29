@@ -1,27 +1,21 @@
 import os
-import ssl
-import smtplib
 import logging
-from email.message import EmailMessage
+import requests
 from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL") or SMTP_USER
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+EMAIL_FROM = os.getenv("EMAIL_FROM", "FloorEye <onboarding@resend.dev>")
 
-SMTP_ENABLED = bool(SMTP_USER and SMTP_PASSWORD)
+SMTP_ENABLED = bool(RESEND_API_KEY)
 
-logger.info(f"[EMAILER] SMTP_HOST={SMTP_HOST}, SMTP_PORT={SMTP_PORT}")
-logger.info(f"[EMAILER] SMTP_USER={'SET' if SMTP_USER else 'NOT SET'}")
-logger.info(f"[EMAILER] SMTP_PASSWORD={'SET' if SMTP_PASSWORD else 'NOT SET'}")
-logger.info(f"[EMAILER] SMTP_ENABLED={SMTP_ENABLED}")
+logger.info(f"[EMAILER] RESEND_API_KEY={'SET' if RESEND_API_KEY else 'NOT SET'}")
+logger.info(f"[EMAILER] EMAIL_FROM={EMAIL_FROM}")
+logger.info(f"[EMAILER] EMAIL_ENABLED={SMTP_ENABLED}")
 
 if not SMTP_ENABLED:
-    logger.warning("[EMAILER] SMTP not configured - email sending disabled")
+    logger.warning("[EMAILER] Resend API key not configured - email sending disabled")
 
 
 def send_email(
@@ -31,101 +25,60 @@ def send_email(
     attachments: Optional[List[str]] = None,
 ) -> bool:
     if not SMTP_ENABLED:
-        logger.error("SMTP credentials missing")
+        logger.error("[EMAIL] Resend API key missing")
         return False
 
     if not to_list:
-        logger.error("No email recipients provided")
+        logger.error("[EMAIL] No email recipients provided")
         return False
 
+    logger.info(f"[EMAIL] Attempting to send email to {to_list}")
+
     try:
-        msg = _build_message(
-            subject=subject,
-            body=body,
-            to_list=to_list,
-            attachments=attachments,
+        payload = {
+            "from": EMAIL_FROM,
+            "to": to_list,
+            "subject": subject,
+            "text": body,
+        }
+
+        if attachments:
+            attachment_list = []
+            for filepath in attachments:
+                try:
+                    with open(filepath, "rb") as f:
+                        import base64
+                        content = base64.b64encode(f.read()).decode("utf-8")
+                        filename = os.path.basename(filepath)
+                        attachment_list.append({
+                            "filename": filename,
+                            "content": content,
+                        })
+                        logger.info(f"[EMAIL] Attached file: {filename}")
+                except Exception as e:
+                    logger.warning(f"[EMAIL] Failed to attach file {filepath}: {e}")
+
+            if attachment_list:
+                payload["attachments"] = attachment_list
+
+        response = requests.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
         )
 
-        context = ssl.create_default_context()
-
-        try:
-            _send_via_starttls(msg, context)
-            logger.info("Email sent successfully via STARTTLS")
+        if response.status_code == 200:
+            result = response.json()
+            logger.info(f"[EMAIL] Email sent successfully! ID: {result.get('id')}")
             return True
-
-        except Exception as e:
-            logger.warning(f"STARTTLS failed: {e}, trying SMTP_SSL")
-
-            _send_via_ssl(msg, context)
-            logger.info("Email sent successfully via SMTP_SSL")
-            return True
+        else:
+            logger.error(f"[EMAIL] Resend API error: {response.status_code} - {response.text}")
+            return False
 
     except Exception as e:
-        logger.exception("Email sending failed")
+        logger.error(f"[EMAIL] Email sending failed: {type(e).__name__}: {e}")
         return False
-
-
-def _build_message(
-    subject: str,
-    body: str,
-    to_list: List[str],
-    attachments: Optional[List[str]],
-) -> EmailMessage:
-    msg = EmailMessage()
-    msg["From"] = SMTP_FROM_EMAIL
-    msg["To"] = ", ".join(to_list)
-    msg["Subject"] = subject
-    msg.set_content(body)
-
-    if attachments:
-        for path in attachments:
-            _attach_file(msg, path)
-
-    return msg
-
-
-def _attach_file(msg: EmailMessage, filepath: str):
-    try:
-        with open(filepath, "rb") as f:
-            data = f.read()
-
-        filename = os.path.basename(filepath)
-        maintype, subtype = _guess_mime_type(filename)
-
-        msg.add_attachment(
-            data,
-            maintype=maintype,
-            subtype=subtype,
-            filename=filename,
-        )
-
-        logger.info(f"Attached file: {filename}")
-
-    except Exception as e:
-        logger.warning(f"Failed to attach file {filepath}: {e}")
-
-
-def _guess_mime_type(filename: str):
-    name = filename.lower()
-    if name.endswith((".jpg", ".jpeg")):
-        return "image", "jpeg"
-    if name.endswith(".png"):
-        return "image", "png"
-    if name.endswith(".pdf"):
-        return "application", "pdf"
-    return "application", "octet-stream"
-
-
-def _send_via_starttls(msg: EmailMessage, context: ssl.SSLContext):
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=20) as server:
-        server.ehlo()
-        server.starttls(context=context)
-        server.ehlo()
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
-
-
-def _send_via_ssl(msg: EmailMessage, context: ssl.SSLContext):
-    with smtplib.SMTP_SSL(SMTP_HOST, 465, context=context, timeout=20) as server:
-        server.login(SMTP_USER, SMTP_PASSWORD)
-        server.send_message(msg)
